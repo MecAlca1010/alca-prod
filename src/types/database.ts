@@ -42,3 +42,40 @@ export interface HiabModel {
   name: string
   is_active: boolean
 }
+
+export interface SubComponent {
+  id: string
+  part_number: string
+  description: string
+  created_at?: string
+}
+
+export interface Component {
+  id: string
+  part_number: string
+  description: string
+  created_at?: string
+}
+
+export interface ComponentItem {
+  id: string
+  component_id: string
+  sub_component_id: string
+  quantity: number
+  sub_component?: SubComponent
+}
+
+export interface ProjectComponent {
+  id: string
+  project_id: string
+  component_id: string
+  quantity: number
+  component?: Component
+}
+
+export interface MaterialLine {
+  part_number: string
+  description: string
+  total_quantity: number
+  sub_component_id: string
+}

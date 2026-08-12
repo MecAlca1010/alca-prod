@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Project, ProjectStage, Stage, ProjectStatus } from '../types/database'
+import type { Project, ProjectStage, Stage, ProjectStatus, Component, ProjectComponent } from '../types/database'
 
 interface ProjectDetailProps {
   isAdmin: boolean
@@ -35,13 +35,22 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const [sharepointUrl, setSharepointUrl] = useState('')
   const [editingSharepoint, setEditingSharepoint] = useState(false)
 
+  // Components
+  const [allComponents, setAllComponents] = useState<Component[]>([])
+  const [projectComponents, setProjectComponents] = useState<(ProjectComponent & { component?: Component })[]>([])
+  const [selectedCompIds, setSelectedCompIds] = useState<string[]>([])
+  const [showCompPicker, setShowCompPicker] = useState(false)
+  const [compSaving, setCompSaving] = useState(false)
+
   const loadProject = async () => {
     if (!id) return
 
-    const [projectRes, stagesRes, allStagesRes] = await Promise.all([
+    const [projectRes, stagesRes, allStagesRes, compsRes, pcRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_stages').select('*, stage:stages(*)').eq('project_id', id),
       supabase.from('stages').select('*').order('sort_order'),
+      supabase.from('components').select('*').order('part_number'),
+      supabase.from('project_components').select('*, component:components(*)').eq('project_id', id),
     ])
 
     if (projectRes.error || !projectRes.data) {
@@ -62,6 +71,11 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
 
     if (stagesRes.data) setProjectStages(stagesRes.data as any)
     if (allStagesRes.data) setAllStages(allStagesRes.data)
+    if (compsRes.data) setAllComponents(compsRes.data)
+    if (pcRes.data) {
+      setProjectComponents(pcRes.data as any)
+      setSelectedCompIds((pcRes.data as any[]).map((pc: any) => pc.component_id))
+    }
     setLoading(false)
   }
 
@@ -124,7 +138,39 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
     }
   }
 
+  const saveProjectComponents = async () => {
+    if (!project || !isAdmin) return
+    setCompSaving(true)
+    // Delete existing then insert selected
+    await supabase.from('project_components').delete().eq('project_id', project.id)
+    if (selectedCompIds.length > 0) {
+      await supabase.from('project_components').insert(
+        selectedCompIds.map((cid) => ({
+          project_id: project.id,
+          component_id: cid,
+          quantity: 1,
+        }))
+      )
+    }
+    const { data } = await supabase
+      .from('project_components')
+      .select('*, component:components(*)')
+      .eq('project_id', project.id)
+    if (data) setProjectComponents(data as any)
+    setShowCompPicker(false)
+    setCompSaving(false)
+    setMessage('Composants enregistrés ✓')
+    setTimeout(() => setMessage(''), 2500)
+  }
+
+  const toggleCompSelect = (id: string) => {
+    setSelectedCompIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+
   const handleDelete = async () => {
+
     if (!project || !isAdmin) return
     if (!confirm(`Supprimer définitivement le projet ${project.project_number} — ${project.client_name} ?`)) return
     await supabase.from('projects').delete().eq('id', project.id)
@@ -324,8 +370,83 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-lg font-black mb-2">Composants</h2>
-          <p className="text-gray-400 text-sm">La sélection des composants sera disponible dans une prochaine étape.</p>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-black">Composants</h2>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setSelectedCompIds(projectComponents.map((pc) => pc.component_id))
+                  setShowCompPicker(true)
+                }}
+                className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50"
+              >
+                {projectComponents.length > 0 ? 'Modifier' : '+ Ajouter'}
+              </button>
+            )}
+          </div>
+
+          {projectComponents.length === 0 ? (
+            <p className="text-gray-400 text-sm">Aucun composant sélectionné pour ce projet.</p>
+          ) : (
+            <div className="space-y-1">
+              {projectComponents.map((pc) => (
+                <div key={pc.id} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
+                  <div>
+                    <span className="font-medium">{pc.component?.part_number}</span>
+                    <span className="text-gray-500 ml-2">{pc.component?.description}</span>
+                  </div>
+                  <span className="text-gray-400 text-xs">× {pc.quantity}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showCompPicker && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+                <div className="p-4 border-b flex items-center justify-between">
+                  <h3 className="font-black text-lg">Sélectionner les composants</h3>
+                  <button onClick={() => setShowCompPicker(false)} className="text-2xl text-gray-400">×</button>
+                </div>
+                <div className="overflow-y-auto p-4 space-y-1 flex-1">
+                  {allComponents.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">
+                      Aucun composant dans le catalogue.{' '}
+                      <Link to="/composants" className="underline text-blue-600">Créer des composants</Link>
+                    </p>
+                  ) : (
+                    allComponents.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCompIds.includes(c.id)}
+                          onChange={() => toggleCompSelect(c.id)}
+                          className="w-4 h-4 accent-alca-yellow"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{c.part_number}</div>
+                          <div className="text-xs text-gray-500 truncate">{c.description}</div>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <div className="p-4 border-t flex gap-2">
+                  <button onClick={() => setShowCompPicker(false)} className="flex-1 border py-2 rounded-lg text-sm">Annuler</button>
+                  <button
+                    onClick={saveProjectComponents}
+                    disabled={compSaving}
+                    className="flex-1 bg-alca-yellow font-black py-2 rounded-lg text-sm disabled:opacity-50"
+                  >
+                    {compSaving ? '...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {isAdmin && (

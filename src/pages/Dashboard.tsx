@@ -24,6 +24,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [stages, setStages] = useState<Stage[]>([])
   const [projectStages, setProjectStages] = useState<(ProjectStage & { stage?: Stage })[]>([])
   const [scheduledStages, setScheduledStages] = useState<ScheduledStage[]>([])
+  const [materialLines, setMaterialLines] = useState<{ part_number: string; description: string; total_quantity: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showDurationsModal, setShowDurationsModal] = useState(false)
@@ -59,6 +60,48 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       runSchedule(projs, pStages, stgs)
     } else {
       setScheduledStages([])
+    }
+
+    // Material forecast: aggregate sub-components across all projects
+    {
+      const { data: pcs } = await supabase
+        .from('project_components')
+        .select('quantity, component_id')
+
+      if (!pcs || pcs.length === 0) {
+        setMaterialLines([])
+      } else {
+        const compQty: Record<string, number> = {}
+        for (const pc of pcs) {
+          compQty[pc.component_id] = (compQty[pc.component_id] || 0) + (pc.quantity || 1)
+        }
+        const compIds = Object.keys(compQty)
+        const { data: items } = await supabase
+          .from('component_items')
+          .select('component_id, quantity, sub_component:sub_components(part_number, description, id)')
+          .in('component_id', compIds)
+
+        if (!items) {
+          setMaterialLines([])
+        } else {
+          const totals: Record<string, { part_number: string; description: string; total_quantity: number }> = {}
+          for (const item of items as any[]) {
+            const sub = item.sub_component
+            if (!sub) continue
+            const mult = compQty[item.component_id] || 1
+            const qty = (item.quantity || 1) * mult
+            if (!totals[sub.id]) {
+              totals[sub.id] = {
+                part_number: sub.part_number,
+                description: sub.description,
+                total_quantity: 0,
+              }
+            }
+            totals[sub.id].total_quantity += qty
+          }
+          setMaterialLines(Object.values(totals).sort((a, b) => a.part_number.localeCompare(b.part_number)))
+        }
+      }
     }
   }, [])
 
@@ -254,6 +297,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
 
         {isAdmin && (
           <div className="flex gap-2">
+            <Link
+              to="/composants"
+              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
+            >
+              Composants
+            </Link>
             <button
               onClick={() => setShowDurationsModal(true)}
               className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition"
@@ -365,10 +414,40 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <h2 className="text-xl font-black mb-2">Prévision de matériel</h2>
-        <p className="text-gray-400 text-sm">
-          La liste consolidée des composants apparaîtra ici une fois des projets avec composants créés.
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-black">Prévision de matériel</h2>
+          {isAdmin && (
+            <Link to="/composants" className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50">
+              Gérer le catalogue
+            </Link>
+          )}
+        </div>
+        {materialLines.length === 0 ? (
+          <p className="text-gray-400 text-sm">
+            Aucun matériel à prévoir. Ajoutez des composants aux projets pour voir la consolidation ici.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b">
+                  <th className="pb-2 font-medium">N° pièce</th>
+                  <th className="pb-2 font-medium">Description</th>
+                  <th className="pb-2 font-medium text-right">Qté totale</th>
+                </tr>
+              </thead>
+              <tbody>
+                {materialLines.map((line) => (
+                  <tr key={line.part_number} className="border-b border-gray-50">
+                    <td className="py-2 font-medium">{line.part_number}</td>
+                    <td className="py-2 text-gray-600">{line.description}</td>
+                    <td className="py-2 text-right font-black">{line.total_quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {showAddModal && (
