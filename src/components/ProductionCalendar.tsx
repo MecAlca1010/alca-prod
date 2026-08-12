@@ -6,7 +6,6 @@ import {
   formatWeekRange,
   formatDate,
   parseDate,
-  addBusinessDays,
 } from '../lib/dates'
 import type { ScheduledStage } from '../lib/scheduler'
 
@@ -28,7 +27,33 @@ export default function ProductionCalendar({
 
   const baseWeekStart = useMemo(() => startOfWeek(new Date()), [])
 
-  const weeksToShow = expanded ? 8 : 4
+  // When expanded: show enough weeks to cover the last scheduled stage
+  // When collapsed: always 4 weeks
+  const weeksToShow = useMemo(() => {
+    if (!expanded) return 4
+
+    if (scheduledStages.length === 0) return 8 // fallback
+
+    // Find the latest end date among all stages
+    let maxEnd = scheduledStages[0].endDate
+    for (const s of scheduledStages) {
+      if (s.endDate > maxEnd) maxEnd = s.endDate
+    }
+
+    const lastDate = parseDate(maxEnd)
+    const lastWeekStart = startOfWeek(lastDate)
+
+    // Number of weeks from baseWeekStart + weekOffset to lastWeekStart, inclusive
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000
+    const firstVisible = new Date(baseWeekStart)
+    firstVisible.setDate(baseWeekStart.getDate() + weekOffset * 7)
+
+    const diffMs = lastWeekStart.getTime() - firstVisible.getTime()
+    const weeksNeeded = Math.max(4, Math.ceil(diffMs / msPerWeek) + 1)
+
+    // Cap at something reasonable (e.g. 52 weeks ≈ 1 year)
+    return Math.min(weeksNeeded, 52)
+  }, [expanded, scheduledStages, baseWeekStart, weekOffset])
 
   const weeks = useMemo(() => {
     const result: { start: Date; days: Date[] }[] = []
@@ -40,7 +65,6 @@ export default function ProductionCalendar({
     return result
   }, [baseWeekStart, weekOffset, weeksToShow])
 
-  // Group stages that appear in the visible range
   const visibleStart = weeks[0]?.days[0]
   const visibleEnd = weeks[weeks.length - 1]?.days[4]
 
@@ -50,17 +74,14 @@ export default function ProductionCalendar({
     const vEnd = formatDate(visibleEnd)
 
     return scheduledStages.filter((s) => {
-      // Overlaps visible range
       return s.startDate <= vEnd && s.endDate >= vStart
     })
   }, [scheduledStages, visibleStart, visibleEnd])
 
-  /** Calculate grid position for a stage bar within a week */
   function getBarStyle(stage: ScheduledStage, weekDays: Date[]) {
     const weekStartStr = formatDate(weekDays[0])
     const weekEndStr = formatDate(weekDays[4])
 
-    // Clip to this week
     const barStart = stage.startDate < weekStartStr ? weekStartStr : stage.startDate
     const barEnd = stage.endDate > weekEndStr ? weekEndStr : stage.endDate
 
@@ -78,10 +99,9 @@ export default function ProductionCalendar({
     }
   }
 
-  // Stack bars that overlap on same days (simple lane assignment per week)
   function assignLanes(stages: ScheduledStage[], weekDays: Date[]): Map<string, number> {
     const lanes = new Map<string, number>()
-    const laneEnds: string[] = [] // end date of each lane
+    const laneEnds: string[] = []
 
     const sorted = [...stages].sort((a, b) => a.startDate.localeCompare(b.startDate))
 
@@ -99,12 +119,19 @@ export default function ProductionCalendar({
     return lanes
   }
 
+  // Label for expand button
+  const expandLabel = expanded
+    ? 'Réduire (4 semaines)'
+    : scheduledStages.length > 0
+      ? 'Agrandir (jusqu’à la fin)'
+      : 'Agrandir'
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-xl font-black">Calendrier de production</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setWeekOffset((o) => o - 1)}
             className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
@@ -130,7 +157,7 @@ export default function ProductionCalendar({
             onClick={() => setExpanded((e) => !e)}
             className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
           >
-            {expanded ? 'Réduire' : 'Agrandir'}
+            {expandLabel}
           </button>
           {isAdmin && onReoptimize && (
             <button
@@ -144,8 +171,14 @@ export default function ProductionCalendar({
         </div>
       </div>
 
+      {expanded && scheduledStages.length > 0 && (
+        <p className="text-xs text-gray-400 mb-3">
+          Vue étendue : {weeksToShow} semaines (jusqu’à la fin du dernier projet planifié). Faites défiler pour voir plus loin.
+        </p>
+      )}
+
       {/* Weeks */}
-      <div className={`space-y-6 ${expanded ? 'max-h-[70vh] overflow-y-auto' : ''}`}>
+      <div className={`space-y-6 ${expanded ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}>
         {weeks.map((week) => {
           const weekStages = barsInView.filter((s) => {
             const ws = formatDate(week.days[0])
@@ -185,7 +218,6 @@ export default function ProductionCalendar({
                 className="relative border border-gray-100 rounded-lg bg-gray-50/50"
                 style={{ minHeight: Math.max(barsHeight, 48) }}
               >
-                {/* Vertical day separators */}
                 <div className="absolute inset-0 grid grid-cols-5 pointer-events-none">
                   {[0, 1, 2, 3, 4].map((i) => (
                     <div key={i} className="border-r border-gray-100 last:border-r-0" />
