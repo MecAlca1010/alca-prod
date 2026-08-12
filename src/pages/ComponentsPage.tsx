@@ -164,7 +164,8 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
         rows.map((x) => ({
           component_id: compId!,
           sub_component_id: x.subId,
-          quantity: x.qty,
+          // Max 4 decimals in UI, round to 2 on save
+          quantity: Math.round(x.qty * 100) / 100,
         }))
       )
     }
@@ -352,14 +353,21 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                     </select>
                     <input
                       type="number"
-                      min={1}
+                      min={0.01}
+                      step="any"
                       value={row.qty}
                       onChange={(e) => {
                         const next = [...compSubs]
-                        next[idx] = { ...next[idx], qty: Math.max(1, parseInt(e.target.value) || 1) }
+                        const raw = e.target.value
+                        // Allow typing decimals; clamp invalid to previous or 0.01
+                        let val = parseFloat(raw)
+                        if (isNaN(val) || val < 0) val = 0
+                        // Limit to 4 decimal places while typing
+                        val = Math.round(val * 10000) / 10000
+                        next[idx] = { ...next[idx], qty: val }
                         setCompSubs(next)
                       }}
-                      className="w-20 border rounded-lg px-2 py-1.5 text-sm text-center"
+                      className="w-24 border rounded-lg px-2 py-1.5 text-sm text-center"
                     />
                     <button
                       type="button"
@@ -418,7 +426,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                             <span>
                               {ci.sub_component?.part_number} — {ci.sub_component?.description}
                             </span>
-                            <span className="font-medium">× {ci.quantity}</span>
+                            <span className="font-medium">× {Number(ci.quantity)}</span>
                           </div>
                         ))}
                       </div>
