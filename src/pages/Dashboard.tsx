@@ -5,6 +5,7 @@ import type { Project, Stage, ProjectStage } from '../types/database'
 import AddProjectModal from '../components/AddProjectModal'
 import ProductionCalendar from '../components/ProductionCalendar'
 import ConfirmModal from '../components/ConfirmModal'
+import StageDurationsModal from '../components/StageDurationsModal'
 import { scheduleProjects, type ScheduledStage } from '../lib/scheduler'
 
 interface DashboardProps {
@@ -25,6 +26,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [scheduledStages, setScheduledStages] = useState<ScheduledStage[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showDurationsModal, setShowDurationsModal] = useState(false)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
@@ -108,6 +110,53 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     runSchedule(projects, projectStages, stages)
   }
 
+  const handleStageDatesChange = async (stage: ScheduledStage) => {
+    // Persist manual override to DB
+    await supabase
+      .from('project_stages')
+      .update({
+        start_date: stage.startDate,
+        end_date: stage.endDate,
+        duration_days: stage.durationDays,
+      })
+      .eq('id', stage.projectStageId)
+
+    // Update local scheduled stages
+    setScheduledStages((prev) =>
+      prev.map((s) => (s.projectStageId === stage.projectStageId ? stage : s))
+    )
+
+    // Recalculate estimated delivery for this project
+    const projectStagesForProj = scheduledStages
+      .filter((s) => s.projectId === stage.projectId)
+      .map((s) => (s.projectStageId === stage.projectStageId ? stage : s))
+
+    if (projectStagesForProj.length > 0) {
+      const lastEnd = projectStagesForProj.reduce((max, s) =>
+        s.endDate > max ? s.endDate : max, projectStagesForProj[0].endDate)
+      // next business day approx: just store last end for now; full recalc on reoptimize
+      await supabase
+        .from('projects')
+        .update({ estimated_delivery_date: lastEnd })
+        .eq('id', stage.projectId)
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === stage.projectId ? { ...p, estimated_delivery_date: lastEnd } : p
+        )
+      )
+    }
+  }
+
+  const handleDurationsSaved = (updated: Stage[]) => {
+    setStages(updated)
+    // Ask to reoptimize
+    setConfirmMessage(
+      'Les durées des étapes ont été modifiées.\n\nVoulez-vous réoptimiser le calendrier avec les nouvelles durées ?'
+    )
+    setPendingProjects(projects) // reuse confirm flow for reoptimize
+    setConfirmOpen(true)
+  }
+
   // --- Drag & drop with confirmation ---
   const saveNewOrder = async (newProjects: Project[]) => {
     if (savingOrder.current) return
@@ -172,15 +221,21 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const handleConfirmReorder = async () => {
     if (!pendingProjects) return
     setConfirmOpen(false)
-    setProjects(pendingProjects)
-    await saveNewOrder(pendingProjects)
-    // Re-optimize calendar with new order
-    await runSchedule(pendingProjects, projectStages, stages)
+    // If projects order actually changed in UI already differently handled;
+    // For durations save we pass current projects and just reoptimize
+    const orderChanged = pendingProjects.some((p, i) => projects[i]?.id !== p.id)
+    if (orderChanged) {
+      setProjects(pendingProjects)
+      await saveNewOrder(pendingProjects)
+      await runSchedule(pendingProjects, projectStages, stages)
+    } else {
+      // durations change → just reoptimize with current order
+      await runSchedule(projects, projectStages, stages)
+    }
     setPendingProjects(null)
   }
 
   const handleCancelReorder = () => {
-    // Don't change order, just close
     setConfirmOpen(false)
     setPendingProjects(null)
   }
@@ -198,12 +253,20 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
 
         {isAdmin && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110 transition shadow-sm"
-          >
-            + Ajouter un projet
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowDurationsModal(true)}
+              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition"
+            >
+              Durées des étapes
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110 transition shadow-sm"
+            >
+              + Ajouter un projet
+            </button>
+          </div>
         )}
       </div>
 
@@ -215,6 +278,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             isAdmin={isAdmin}
             onReoptimize={handleReoptimize}
             isOptimizing={isOptimizing}
+            onStageDatesChange={handleStageDatesChange}
           />
 
           {/* Legend */}
@@ -311,6 +375,14 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         <AddProjectModal
           onClose={() => setShowAddModal(false)}
           onCreated={loadData}
+        />
+      )}
+
+      {showDurationsModal && (
+        <StageDurationsModal
+          stages={stages}
+          onClose={() => setShowDurationsModal(false)}
+          onSaved={handleDurationsSaved}
         />
       )}
 
