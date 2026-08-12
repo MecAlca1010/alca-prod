@@ -1,8 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Project, Stage } from '../types/database'
+import type { Project, Stage, ProjectStage } from '../types/database'
 import AddProjectModal from '../components/AddProjectModal'
+import ProductionCalendar from '../components/ProductionCalendar'
+import ConfirmModal from '../components/ConfirmModal'
+import { scheduleProjects, type ScheduledStage } from '../lib/scheduler'
 
 interface DashboardProps {
   isAdmin: boolean
@@ -18,38 +21,104 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 export default function Dashboard({ isAdmin }: DashboardProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [stages, setStages] = useState<Stage[]>([])
+  const [projectStages, setProjectStages] = useState<(ProjectStage & { stage?: Stage })[]>([])
+  const [scheduledStages, setScheduledStages] = useState<ScheduledStage[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [isOptimizing, setIsOptimizing] = useState(false)
+
+  // Confirmation modal state
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingProjects, setPendingProjects] = useState<Project[] | null>(null)
+  const [confirmMessage, setConfirmMessage] = useState('')
+
   const savingOrder = useRef(false)
 
-  const loadData = async () => {
-    const [projectsRes, stagesRes] = await Promise.all([
+  const loadData = useCallback(async () => {
+    const [projectsRes, stagesRes, psRes] = await Promise.all([
       supabase.from('projects').select('*').order('priority_order', { ascending: true }),
       supabase.from('stages').select('*').order('sort_order', { ascending: true }),
+      supabase.from('project_stages').select('*, stage:stages(*)'),
     ])
-    if (projectsRes.data) setProjects(projectsRes.data)
-    if (stagesRes.data) setStages(stagesRes.data)
+
+    const projs = projectsRes.data || []
+    const stgs = stagesRes.data || []
+    const pStages = (psRes.data || []) as (ProjectStage & { stage?: Stage })[]
+
+    setProjects(projs)
+    setStages(stgs)
+    setProjectStages(pStages)
     setLoading(false)
-  }
+
+    // Auto-schedule if we have data
+    if (projs.length > 0 && pStages.length > 0) {
+      runSchedule(projs, pStages, stgs)
+    } else {
+      setScheduledStages([])
+    }
+  }, [])
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [loadData])
 
+  const runSchedule = async (
+    projs: Project[],
+    pStages: (ProjectStage & { stage?: Stage })[],
+    stgs: Stage[]
+  ) => {
+    setIsOptimizing(true)
+    try {
+      const result = scheduleProjects(projs, pStages, stgs)
+
+      // Persist dates to project_stages
+      const updates = result.stages.map((s) =>
+        supabase
+          .from('project_stages')
+          .update({
+            start_date: s.startDate,
+            end_date: s.endDate,
+            duration_days: s.durationDays,
+          })
+          .eq('id', s.projectStageId)
+      )
+      await Promise.all(updates)
+
+      // Persist estimated delivery dates
+      const deliveryUpdates = Object.entries(result.estimatedDeliveries).map(
+        ([projectId, date]) =>
+          supabase
+            .from('projects')
+            .update({ estimated_delivery_date: date })
+            .eq('id', projectId)
+      )
+      await Promise.all(deliveryUpdates)
+
+      setScheduledStages(result.stages)
+    } catch (err) {
+      console.error('Schedule error:', err)
+    }
+    setIsOptimizing(false)
+  }
+
+  const handleReoptimize = () => {
+    if (projects.length === 0) return
+    runSchedule(projects, projectStages, stages)
+  }
+
+  // --- Drag & drop with confirmation ---
   const saveNewOrder = async (newProjects: Project[]) => {
     if (savingOrder.current) return
     savingOrder.current = true
 
-    // Update priority_order for all projects (10, 20, 30...)
     const updates = newProjects.map((p, index) =>
       supabase
         .from('projects')
         .update({ priority_order: (index + 1) * 10 })
         .eq('id', p.id)
     )
-
     await Promise.all(updates)
     savingOrder.current = false
   }
@@ -66,9 +135,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     setDragOverId(id)
   }
 
-  const handleDragLeave = () => {
-    setDragOverId(null)
-  }
+  const handleDragLeave = () => setDragOverId(null)
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault()
@@ -86,15 +153,36 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     const [moved] = newProjects.splice(oldIndex, 1)
     newProjects.splice(newIndex, 0, moved)
 
-    setProjects(newProjects)
+    // Show confirmation before applying + reoptimizing
+    setPendingProjects(newProjects)
+    setConfirmMessage(
+      `Vous avez changé l'ordre de priorité des projets.\n\nVoulez-vous que l'algorithme réorganise automatiquement le calendrier de production selon ce nouvel ordre ?`
+    )
+    setConfirmOpen(true)
+
     setDraggedId(null)
     setDragOverId(null)
-    saveNewOrder(newProjects)
   }
 
   const handleDragEnd = () => {
     setDraggedId(null)
     setDragOverId(null)
+  }
+
+  const handleConfirmReorder = async () => {
+    if (!pendingProjects) return
+    setConfirmOpen(false)
+    setProjects(pendingProjects)
+    await saveNewOrder(pendingProjects)
+    // Re-optimize calendar with new order
+    await runSchedule(pendingProjects, projectStages, stages)
+    setPendingProjects(null)
+  }
+
+  const handleCancelReorder = () => {
+    // Don't change order, just close
+    setConfirmOpen(false)
+    setPendingProjects(null)
   }
 
   if (loading) {
@@ -120,25 +208,17 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Calendar placeholder */}
-        <div className="xl:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-black">Calendrier de production</h2>
-            <div className="flex gap-2">
-              <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">←</button>
-              <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">→</button>
-              <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">Agrandir</button>
-            </div>
-          </div>
+        {/* Calendar */}
+        <div className="xl:col-span-2">
+          <ProductionCalendar
+            scheduledStages={scheduledStages}
+            isAdmin={isAdmin}
+            onReoptimize={handleReoptimize}
+            isOptimizing={isOptimizing}
+          />
 
-          <div className="bg-gray-50 rounded-lg h-64 flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <p className="font-medium">Calendrier (4 semaines)</p>
-              <p className="text-sm mt-1">Sera implémenté dans la prochaine étape</p>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-3">
+          {/* Legend */}
+          <div className="mt-3 flex flex-wrap gap-3 px-1">
             {stages.map((stage) => (
               <div key={stage.id} className="flex items-center gap-1.5 text-xs">
                 <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: stage.color }} />
@@ -167,6 +247,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
                 const status = statusLabels[project.status] || statusLabels.a_venir
                 const isDragging = draggedId === project.id
                 const isDragOver = dragOverId === project.id
+                const delivery = project.estimated_delivery_date
 
                 return (
                   <div
@@ -192,18 +273,24 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
 
                     <Link
                       to={`/projet/${project.id}`}
-                      className="flex-1 min-w-0 flex items-center justify-between gap-2"
+                      className="flex-1 min-w-0"
                       onClick={(e) => {
-                        // Prevent navigation while dragging
                         if (draggedId) e.preventDefault()
                       }}
                     >
-                      <div className="font-medium truncate text-sm">
-                        {project.project_number} — {project.client_name}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium truncate text-sm">
+                          {project.project_number} — {project.client_name}
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${status.color}`}>
+                          {status.label}
+                        </span>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${status.color}`}>
-                        {status.label}
-                      </span>
+                      {delivery && (
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          Livraison est. : {delivery}
+                        </div>
+                      )}
                     </Link>
                   </div>
                 )
@@ -224,6 +311,17 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         <AddProjectModal
           onClose={() => setShowAddModal(false)}
           onCreated={loadData}
+        />
+      )}
+
+      {confirmOpen && (
+        <ConfirmModal
+          title="Réorganiser le calendrier ?"
+          message={confirmMessage}
+          confirmLabel="Oui, réoptimiser"
+          cancelLabel="Non, garder l'ordre actuel"
+          onConfirm={handleConfirmReorder}
+          onCancel={handleCancelReorder}
         />
       )}
     </div>
