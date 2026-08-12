@@ -153,7 +153,6 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         }
       }
     }
-    }
   }, [])
 
   useEffect(() => {
