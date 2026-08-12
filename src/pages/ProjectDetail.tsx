@@ -33,6 +33,7 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const [vin, setVin] = useState('')
   const [status, setStatus] = useState<ProjectStatus>('a_venir')
   const [sharepointUrl, setSharepointUrl] = useState('')
+  const [editingSharepoint, setEditingSharepoint] = useState(false)
 
   const loadProject = async () => {
     if (!id) return
@@ -86,6 +87,7 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
       setMessage('Erreur: ' + error.message)
     } else {
       setMessage('Enregistré ✓')
+      setEditingSharepoint(false)
       setTimeout(() => setMessage(''), 2500)
       loadProject()
     }
@@ -232,14 +234,57 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="text-lg font-black mb-3">Documents (SharePoint)</h2>
           {isAdmin ? (
-            <input type="url" value={sharepointUrl} onChange={(e) => setSharepointUrl(e.target.value)}
-              placeholder="https://... (lien vers le dossier SharePoint du projet)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow" />
+            editingSharepoint || !sharepointUrl ? (
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={sharepointUrl}
+                  onChange={(e) => setSharepointUrl(e.target.value)}
+                  placeholder="https://... (lien vers le dossier SharePoint du projet)"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow"
+                />
+                {sharepointUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingSharepoint(false)}
+                    className="text-sm text-gray-500 hover:text-black px-2"
+                  >
+                    OK
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <a
+                  href={sharepointUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium"
+                >
+                  Ouvrir le dossier SharePoint →
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setEditingSharepoint(true)}
+                  className="text-gray-400 hover:text-black p-1.5 rounded hover:bg-gray-100"
+                  title="Modifier le lien"
+                >
+                  ✎
+                </button>
+              </div>
+            )
           ) : sharepointUrl ? (
-            <a href={sharepointUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline break-all">
+            <a
+              href={sharepointUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium"
+            >
               Ouvrir le dossier SharePoint →
             </a>
-          ) : <p className="text-gray-400 text-sm">Aucun lien SharePoint</p>}
+          ) : (
+            <p className="text-gray-400 text-sm">Aucun lien SharePoint</p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
