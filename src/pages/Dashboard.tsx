@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Project, Stage } from '../types/database'
+import AddProjectModal from '../components/AddProjectModal'
 
 interface DashboardProps {
   isAdmin: boolean
@@ -18,25 +19,26 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [loading, setLoading] = useState(true)
+  const [showAddModal, setShowAddModal] = useState(false)
+
+  const loadData = async () => {
+    const [projectsRes, stagesRes] = await Promise.all([
+      supabase
+        .from('projects')
+        .select('*')
+        .order('priority_order', { ascending: true }),
+      supabase
+        .from('stages')
+        .select('*')
+        .order('sort_order', { ascending: true }),
+    ])
+
+    if (projectsRes.data) setProjects(projectsRes.data)
+    if (stagesRes.data) setStages(stagesRes.data)
+    setLoading(false)
+  }
 
   useEffect(() => {
-    async function loadData() {
-      const [projectsRes, stagesRes] = await Promise.all([
-        supabase
-          .from('projects')
-          .select('*')
-          .order('priority_order', { ascending: true }),
-        supabase
-          .from('stages')
-          .select('*')
-          .order('sort_order', { ascending: true }),
-      ])
-
-      if (projectsRes.data) setProjects(projectsRes.data)
-      if (stagesRes.data) setStages(stagesRes.data)
-      setLoading(false)
-    }
-
     loadData()
   }, [])
 
@@ -54,7 +56,10 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
 
         {isAdmin && (
-          <button className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110 transition shadow-sm">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110 transition shadow-sm"
+          >
             + Ajouter un projet
           </button>
         )}
@@ -138,6 +143,14 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
           La liste consolidée des composants apparaîtra ici une fois des projets avec composants créés.
         </p>
       </div>
+
+      {/* Add Project Modal */}
+      {showAddModal && (
+        <AddProjectModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={loadData}
+        />
+      )}
     </div>
   )
 }
