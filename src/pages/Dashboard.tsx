@@ -24,7 +24,14 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [stages, setStages] = useState<Stage[]>([])
   const [projectStages, setProjectStages] = useState<(ProjectStage & { stage?: Stage })[]>([])
   const [scheduledStages, setScheduledStages] = useState<ScheduledStage[]>([])
-  const [materialLines, setMaterialLines] = useState<{ part_number: string; description: string; total_quantity: number }[]>([])
+  const [materialLines, setMaterialLines] = useState<{
+    part_number: string
+    description: string
+    en_production: number
+    a_preparer: number
+    a_venir: number
+    total_quantity: number
+  }[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showDurationsModal, setShowDurationsModal] = useState(false)
@@ -62,46 +69,90 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       setScheduledStages([])
     }
 
-    // Material forecast: aggregate sub-components across all projects
+    // Material forecast: aggregate by project status
     {
       const { data: pcs } = await supabase
         .from('project_components')
-        .select('quantity, component_id')
+        .select('quantity, component_id, project:projects(status)')
 
       if (!pcs || pcs.length === 0) {
         setMaterialLines([])
       } else {
-        const compQty: Record<string, number> = {}
-        for (const pc of pcs) {
-          compQty[pc.component_id] = (compQty[pc.component_id] || 0) + (pc.quantity || 1)
-        }
-        const compIds = Object.keys(compQty)
-        const { data: items } = await supabase
-          .from('component_items')
-          .select('component_id, quantity, sub_component:sub_components(part_number, description, id)')
-          .in('component_id', compIds)
+        // compId -> { en_cours, a_preparer, a_venir } counts (sum of project_component quantities)
+        type Bucket = { en_production: number; a_preparer: number; a_venir: number }
+        const compBuckets: Record<string, Bucket> = {}
 
-        if (!items) {
+        for (const pc of pcs as any[]) {
+          const status = pc.project?.status as string | undefined
+          if (!status) continue
+          if (!compBuckets[pc.component_id]) {
+            compBuckets[pc.component_id] = { en_production: 0, a_preparer: 0, a_venir: 0 }
+          }
+          const qty = pc.quantity || 1
+          if (status === 'en_cours') {
+            compBuckets[pc.component_id].en_production += qty
+          } else if (status === 'en_preparation' || status === 'camion_recu') {
+            compBuckets[pc.component_id].a_preparer += qty
+          } else if (status === 'a_venir') {
+            compBuckets[pc.component_id].a_venir += qty
+          }
+        }
+
+        const compIds = Object.keys(compBuckets)
+        if (compIds.length === 0) {
           setMaterialLines([])
         } else {
-          const totals: Record<string, { part_number: string; description: string; total_quantity: number }> = {}
-          for (const item of items as any[]) {
-            const sub = item.sub_component
-            if (!sub) continue
-            const mult = compQty[item.component_id] || 1
-            const qty = (item.quantity || 1) * mult
-            if (!totals[sub.id]) {
-              totals[sub.id] = {
-                part_number: sub.part_number,
-                description: sub.description,
-                total_quantity: 0,
-              }
+          const { data: items } = await supabase
+            .from('component_items')
+            .select('component_id, quantity, sub_component:sub_components(part_number, description, id)')
+            .in('component_id', compIds)
+
+          if (!items) {
+            setMaterialLines([])
+          } else {
+            type Line = {
+              part_number: string
+              description: string
+              en_production: number
+              a_preparer: number
+              a_venir: number
+              total_quantity: number
             }
-            totals[sub.id].total_quantity += qty
+            const totals: Record<string, Line> = {}
+
+            for (const item of items as any[]) {
+              const sub = item.sub_component
+              if (!sub) continue
+              const bucket = compBuckets[item.component_id]
+              if (!bucket) continue
+              const unitQty = item.quantity || 1
+
+              if (!totals[sub.id]) {
+                totals[sub.id] = {
+                  part_number: sub.part_number,
+                  description: sub.description,
+                  en_production: 0,
+                  a_preparer: 0,
+                  a_venir: 0,
+                  total_quantity: 0,
+                }
+              }
+              totals[sub.id].en_production += unitQty * bucket.en_production
+              totals[sub.id].a_preparer += unitQty * bucket.a_preparer
+              totals[sub.id].a_venir += unitQty * bucket.a_venir
+              totals[sub.id].total_quantity =
+                totals[sub.id].en_production +
+                totals[sub.id].a_preparer +
+                totals[sub.id].a_venir
+            }
+
+            setMaterialLines(
+              Object.values(totals).sort((a, b) => a.part_number.localeCompare(b.part_number))
+            )
           }
-          setMaterialLines(Object.values(totals).sort((a, b) => a.part_number.localeCompare(b.part_number)))
         }
       }
+    }
     }
   }, [])
 
@@ -431,21 +482,30 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b">
-                  <th className="pb-2 font-medium">N° pièce</th>
-                  <th className="pb-2 font-medium">Description</th>
-                  <th className="pb-2 font-medium text-right">Qté totale</th>
+                  <th className="pb-2 pr-3 font-medium">N° pièce</th>
+                  <th className="pb-2 pr-3 font-medium">Description</th>
+                  <th className="pb-2 px-2 font-medium text-right whitespace-nowrap" title="Projets En cours">En production</th>
+                  <th className="pb-2 px-2 font-medium text-right whitespace-nowrap" title="En préparation + Camion reçu">À préparer</th>
+                  <th className="pb-2 px-2 font-medium text-right whitespace-nowrap" title="Projets À venir">À venir</th>
+                  <th className="pb-2 pl-2 font-medium text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {materialLines.map((line) => (
                   <tr key={line.part_number} className="border-b border-gray-50">
-                    <td className="py-2 font-medium">{line.part_number}</td>
-                    <td className="py-2 text-gray-600">{line.description}</td>
-                    <td className="py-2 text-right font-black">{line.total_quantity}</td>
+                    <td className="py-2 pr-3 font-medium whitespace-nowrap">{line.part_number}</td>
+                    <td className="py-2 pr-3 text-gray-600">{line.description}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.en_production || '—'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.a_preparer || '—'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.a_venir || '—'}</td>
+                    <td className="py-2 pl-2 text-right font-black tabular-nums">{line.total_quantity}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p className="text-[11px] text-gray-400 mt-3">
+              En production = En cours · À préparer = En préparation + Camion reçu · À venir = À venir
+            </p>
           </div>
         )}
       </div>

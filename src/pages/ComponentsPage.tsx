@@ -14,13 +14,15 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'components' | 'subs'>('components')
 
-  // Create sub-component form
+  // Sub form (create or edit)
   const [showSubForm, setShowSubForm] = useState(false)
+  const [editingSubId, setEditingSubId] = useState<string | null>(null)
   const [subPart, setSubPart] = useState('')
   const [subDesc, setSubDesc] = useState('')
 
-  // Create component form
+  // Component form (create or edit)
   const [showCompForm, setShowCompForm] = useState(false)
+  const [editingCompId, setEditingCompId] = useState<string | null>(null)
   const [compPart, setCompPart] = useState('')
   const [compDesc, setCompDesc] = useState('')
   const [compSubs, setCompSubs] = useState<{ subId: string; qty: number }[]>([])
@@ -45,61 +47,129 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     load()
   }, [])
 
-  const createSub = async () => {
+  const resetSubForm = () => {
+    setShowSubForm(false)
+    setEditingSubId(null)
+    setSubPart('')
+    setSubDesc('')
+    setError('')
+  }
+
+  const resetCompForm = () => {
+    setShowCompForm(false)
+    setEditingCompId(null)
+    setCompPart('')
+    setCompDesc('')
+    setCompSubs([])
+    setError('')
+  }
+
+  const openEditSub = (s: SubComponent) => {
+    setEditingSubId(s.id)
+    setSubPart(s.part_number)
+    setSubDesc(s.description)
+    setShowSubForm(true)
+    setError('')
+  }
+
+  const openEditComp = (c: Component) => {
+    setEditingCompId(c.id)
+    setCompPart(c.part_number)
+    setCompDesc(c.description)
+    const items = componentItems.filter((ci) => ci.component_id === c.id)
+    setCompSubs(
+      items.map((ci) => ({
+        subId: ci.sub_component_id,
+        qty: ci.quantity,
+      }))
+    )
+    setShowCompForm(true)
+    setError('')
+  }
+
+  const saveSub = async () => {
     if (!subPart.trim() || !subDesc.trim()) {
       setError('Numéro de pièce et description obligatoires')
       return
     }
     setSaving(true)
     setError('')
-    const { error: err } = await supabase.from('sub_components').insert({
-      part_number: subPart.trim(),
-      description: subDesc.trim(),
-    })
-    if (err) {
-      setError(err.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err.message)
-      setSaving(false)
-      return
+
+    if (editingSubId) {
+      const { error: err } = await supabase
+        .from('sub_components')
+        .update({ part_number: subPart.trim(), description: subDesc.trim() })
+        .eq('id', editingSubId)
+      if (err) {
+        setError(err.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err.message)
+        setSaving(false)
+        return
+      }
+    } else {
+      const { error: err } = await supabase.from('sub_components').insert({
+        part_number: subPart.trim(),
+        description: subDesc.trim(),
+      })
+      if (err) {
+        setError(err.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err.message)
+        setSaving(false)
+        return
+      }
     }
-    setSubPart('')
-    setSubDesc('')
-    setShowSubForm(false)
+
+    resetSubForm()
     setSaving(false)
     load()
   }
 
-  const createComp = async () => {
+  const saveComp = async () => {
     if (!compPart.trim() || !compDesc.trim()) {
       setError('Numéro de pièce et description obligatoires')
       return
     }
     setSaving(true)
     setError('')
-    const { data, error: err } = await supabase
-      .from('components')
-      .insert({ part_number: compPart.trim(), description: compDesc.trim() })
-      .select()
-      .single()
-    if (err || !data) {
-      setError(err?.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err?.message || 'Erreur')
-      setSaving(false)
-      return
+
+    let compId = editingCompId
+
+    if (editingCompId) {
+      const { error: err } = await supabase
+        .from('components')
+        .update({ part_number: compPart.trim(), description: compDesc.trim() })
+        .eq('id', editingCompId)
+      if (err) {
+        setError(err.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err.message)
+        setSaving(false)
+        return
+      }
+      // Replace component_items
+      await supabase.from('component_items').delete().eq('component_id', editingCompId)
+    } else {
+      const { data, error: err } = await supabase
+        .from('components')
+        .insert({ part_number: compPart.trim(), description: compDesc.trim() })
+        .select()
+        .single()
+      if (err || !data) {
+        setError(err?.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err?.message || 'Erreur')
+        setSaving(false)
+        return
+      }
+      compId = data.id
     }
-    if (compSubs.length > 0) {
+
+    const rows = compSubs.filter((x) => x.subId && x.qty > 0)
+    if (rows.length > 0 && compId) {
       await supabase.from('component_items').insert(
-        compSubs
-          .filter((x) => x.subId && x.qty > 0)
-          .map((x) => ({
-            component_id: data.id,
-            sub_component_id: x.subId,
-            quantity: x.qty,
-          }))
+        rows.map((x) => ({
+          component_id: compId!,
+          sub_component_id: x.subId,
+          quantity: x.qty,
+        }))
       )
     }
-    setCompPart('')
-    setCompDesc('')
-    setCompSubs([])
-    setShowCompForm(false)
+
+    resetCompForm()
     setSaving(false)
     load()
   }
@@ -134,15 +204,12 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Link to="/" className="text-sm text-gray-500 hover:text-black">← Tableau de bord</Link>
-          <h1 className="text-3xl font-black mt-1">Composants</h1>
-          <p className="text-gray-500 text-sm mt-1">Catalogue composants et sous-composants</p>
-        </div>
+      <div>
+        <Link to="/" className="text-sm text-gray-500 hover:text-black">← Tableau de bord</Link>
+        <h1 className="text-3xl font-black mt-1">Composants</h1>
+        <p className="text-gray-500 text-sm mt-1">Catalogue composants et sous-composants</p>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
         <button
           onClick={() => setTab('components')}
@@ -166,18 +233,23 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
         <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</div>
       )}
 
-      {/* SUB-COMPONENTS TAB */}
+      {/* SUB-COMPONENTS */}
       {tab === 'subs' && (
         <div className="space-y-4">
-          <button
-            onClick={() => { setShowSubForm(true); setError('') }}
-            className="bg-alca-yellow text-alca-black font-black px-4 py-2 rounded-lg text-sm hover:brightness-110"
-          >
-            + Créer un sous-composant
-          </button>
+          {!showSubForm && (
+            <button
+              onClick={() => { resetSubForm(); setShowSubForm(true) }}
+              className="bg-alca-yellow text-alca-black font-black px-4 py-2 rounded-lg text-sm hover:brightness-110"
+            >
+              + Créer un sous-composant
+            </button>
+          )}
 
           {showSubForm && (
             <div className="bg-white border rounded-xl p-4 space-y-3">
+              <h3 className="font-black text-sm">
+                {editingSubId ? 'Modifier le sous-composant' : 'Nouveau sous-composant'}
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500">Numéro de pièce</label>
@@ -191,8 +263,8 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowSubForm(false)} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
-                <button onClick={createSub} disabled={saving}
+                <button onClick={resetSubForm} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
+                <button onClick={saveSub} disabled={saving}
                   className="bg-alca-yellow font-black px-4 py-2 rounded-lg text-sm disabled:opacity-50">
                   {saving ? '...' : 'Enregistrer'}
                 </button>
@@ -206,13 +278,14 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             ) : (
               subComponents.map((s) => (
                 <div key={s.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                  <div className="min-w-0">
+                  <button type="button" onClick={() => openEditSub(s)} className="min-w-0 text-left flex-1 hover:opacity-80">
                     <div className="font-medium text-sm">{s.part_number}</div>
                     <div className="text-xs text-gray-500 truncate">{s.description}</div>
-                  </div>
-                  <button onClick={() => deleteSub(s.id)} className="text-red-500 text-xs hover:underline flex-shrink-0">
-                    Supprimer
                   </button>
+                  <div className="flex gap-3 flex-shrink-0">
+                    <button onClick={() => openEditSub(s)} className="text-xs text-gray-500 hover:text-black">Modifier</button>
+                    <button onClick={() => deleteSub(s.id)} className="text-red-500 text-xs hover:underline">Supprimer</button>
+                  </div>
                 </div>
               ))
             )}
@@ -220,18 +293,23 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
         </div>
       )}
 
-      {/* COMPONENTS TAB */}
+      {/* COMPONENTS */}
       {tab === 'components' && (
         <div className="space-y-4">
-          <button
-            onClick={() => { setShowCompForm(true); setError(''); setCompSubs([]) }}
-            className="bg-alca-yellow text-alca-black font-black px-4 py-2 rounded-lg text-sm hover:brightness-110"
-          >
-            + Créer un composant
-          </button>
+          {!showCompForm && (
+            <button
+              onClick={() => { resetCompForm(); setShowCompForm(true) }}
+              className="bg-alca-yellow text-alca-black font-black px-4 py-2 rounded-lg text-sm hover:brightness-110"
+            >
+              + Créer un composant
+            </button>
+          )}
 
           {showCompForm && (
             <div className="bg-white border rounded-xl p-4 space-y-3">
+              <h3 className="font-black text-sm">
+                {editingCompId ? 'Modifier le composant' : 'Nouveau composant'}
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500">Numéro de pièce</label>
@@ -298,8 +376,8 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
               </div>
 
               <div className="flex gap-2">
-                <button onClick={() => setShowCompForm(false)} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
-                <button onClick={createComp} disabled={saving}
+                <button onClick={resetCompForm} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
+                <button onClick={saveComp} disabled={saving}
                   className="bg-alca-yellow font-black px-4 py-2 rounded-lg text-sm disabled:opacity-50">
                   {saving ? '...' : 'Enregistrer'}
                 </button>
@@ -328,9 +406,10 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                           {items.length} sous-composant{items.length !== 1 ? 's' : ''}
                         </div>
                       </button>
-                      <button onClick={() => deleteComp(c.id)} className="text-red-500 text-xs hover:underline flex-shrink-0">
-                        Supprimer
-                      </button>
+                      <div className="flex gap-3 flex-shrink-0">
+                        <button onClick={() => openEditComp(c)} className="text-xs text-gray-500 hover:text-black">Modifier</button>
+                        <button onClick={() => deleteComp(c.id)} className="text-red-500 text-xs hover:underline">Supprimer</button>
+                      </div>
                     </div>
                     {open && items.length > 0 && (
                       <div className="bg-gray-50 px-4 py-2 border-t border-gray-100">
