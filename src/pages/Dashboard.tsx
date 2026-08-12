@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Project, Stage } from '../types/database'
@@ -20,19 +20,15 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [stages, setStages] = useState<Stage[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const savingOrder = useRef(false)
 
   const loadData = async () => {
     const [projectsRes, stagesRes] = await Promise.all([
-      supabase
-        .from('projects')
-        .select('*')
-        .order('priority_order', { ascending: true }),
-      supabase
-        .from('stages')
-        .select('*')
-        .order('sort_order', { ascending: true }),
+      supabase.from('projects').select('*').order('priority_order', { ascending: true }),
+      supabase.from('stages').select('*').order('sort_order', { ascending: true }),
     ])
-
     if (projectsRes.data) setProjects(projectsRes.data)
     if (stagesRes.data) setStages(stagesRes.data)
     setLoading(false)
@@ -42,13 +38,71 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     loadData()
   }, [])
 
+  const saveNewOrder = async (newProjects: Project[]) => {
+    if (savingOrder.current) return
+    savingOrder.current = true
+
+    // Update priority_order for all projects (10, 20, 30...)
+    const updates = newProjects.map((p, index) =>
+      supabase
+        .from('projects')
+        .update({ priority_order: (index + 1) * 10 })
+        .eq('id', p.id)
+    )
+
+    await Promise.all(updates)
+    savingOrder.current = false
+  }
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    if (!isAdmin) return
+    setDraggedId(id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    if (!isAdmin || !draggedId || draggedId === id) return
+    setDragOverId(id)
+  }
+
+  const handleDragLeave = () => {
+    setDragOverId(null)
+  }
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault()
+    if (!isAdmin || !draggedId || draggedId === targetId) {
+      setDraggedId(null)
+      setDragOverId(null)
+      return
+    }
+
+    const oldIndex = projects.findIndex((p) => p.id === draggedId)
+    const newIndex = projects.findIndex((p) => p.id === targetId)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const newProjects = [...projects]
+    const [moved] = newProjects.splice(oldIndex, 1)
+    newProjects.splice(newIndex, 0, moved)
+
+    setProjects(newProjects)
+    setDraggedId(null)
+    setDragOverId(null)
+    saveNewOrder(newProjects)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedId(null)
+    setDragOverId(null)
+  }
+
   if (loading) {
     return <div className="text-center py-20 text-gray-500">Chargement...</div>
   }
 
   return (
     <div className="space-y-8">
-      {/* Header section */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-black">Tableau de bord</h1>
@@ -84,51 +138,74 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             </div>
           </div>
 
-          {/* Legend */}
           <div className="mt-4 flex flex-wrap gap-3">
             {stages.map((stage) => (
               <div key={stage.id} className="flex items-center gap-1.5 text-xs">
-                <div
-                  className="w-3 h-3 rounded-sm"
-                  style={{ backgroundColor: stage.color }}
-                />
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: stage.color }} />
                 <span>{stage.name}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Projects list */}
+        {/* Projects list with drag & drop */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h2 className="text-xl font-black mb-4">Projets</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-black">Projets</h2>
+            {isAdmin && projects.length > 1 && (
+              <span className="text-xs text-gray-400">Glisser pour réordonner</span>
+            )}
+          </div>
 
           {projects.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">
               Aucun projet pour le moment
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {projects.map((project) => {
                 const status = statusLabels[project.status] || statusLabels.a_venir
+                const isDragging = draggedId === project.id
+                const isDragOver = dragOverId === project.id
+
                 return (
-                  <Link
+                  <div
                     key={project.id}
-                    to={`/projet/${project.id}`}
-                    className="block p-3 rounded-lg border border-gray-100 hover:border-alca-yellow hover:bg-yellow-50/50 transition"
+                    draggable={isAdmin}
+                    onDragStart={(e) => handleDragStart(e, project.id)}
+                    onDragOver={(e) => handleDragOver(e, project.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, project.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`
+                      relative flex items-center gap-2 p-2.5 rounded-lg border transition
+                      ${isAdmin ? 'cursor-grab active:cursor-grabbing' : ''}
+                      ${isDragging ? 'opacity-40 border-dashed' : 'border-gray-100'}
+                      ${isDragOver ? 'border-alca-yellow bg-yellow-50' : 'hover:border-gray-200 hover:bg-gray-50'}
+                    `}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">
-                          {project.project_number} — {project.client_name}
-                        </div>
+                    {isAdmin && (
+                      <div className="text-gray-300 text-sm select-none px-0.5" title="Glisser pour réordonner">
+                        ⋮⋮
                       </div>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${status.color}`}
-                      >
+                    )}
+
+                    <Link
+                      to={`/projet/${project.id}`}
+                      className="flex-1 min-w-0 flex items-center justify-between gap-2"
+                      onClick={(e) => {
+                        // Prevent navigation while dragging
+                        if (draggedId) e.preventDefault()
+                      }}
+                    >
+                      <div className="font-medium truncate text-sm">
+                        {project.project_number} — {project.client_name}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${status.color}`}>
                         {status.label}
                       </span>
-                    </div>
-                  </Link>
+                    </Link>
+                  </div>
                 )
               })}
             </div>
@@ -136,7 +213,6 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
       </div>
 
-      {/* Material forecast placeholder */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
         <h2 className="text-xl font-black mb-2">Prévision de matériel</h2>
         <p className="text-gray-400 text-sm">
@@ -144,7 +220,6 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </p>
       </div>
 
-      {/* Add Project Modal */}
       {showAddModal && (
         <AddProjectModal
           onClose={() => setShowAddModal(false)}
