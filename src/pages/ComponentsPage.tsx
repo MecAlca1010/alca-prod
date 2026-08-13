@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Component, SubComponent, ComponentItem } from '../types/database'
+import ImportCsvModal from '../components/ImportCsvModal'
 
 interface ComponentsPageProps {
   isAdmin: boolean
@@ -30,6 +31,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   const load = async () => {
     const [c, s, ci] = await Promise.all([
@@ -187,6 +189,51 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     load()
   }
 
+  /** Duplicate component + all linked sub-component quantities */
+  const duplicateComp = async (c: Component) => {
+    const items = itemsFor(c.id)
+    const baseName = c.part_number
+    let newPart = `${baseName}-copie`
+    // Ensure unique part number
+    const existingParts = new Set(components.map((x) => x.part_number))
+    let n = 2
+    while (existingParts.has(newPart)) {
+      newPart = `${baseName}-copie${n}`
+      n++
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      const { data: created, error: err } = await supabase
+        .from('components')
+        .insert({
+          part_number: newPart,
+          description: c.description ? `${c.description} (copie)` : 'Copie',
+        })
+        .select()
+        .single()
+      if (err || !created) throw new Error(err?.message || 'Erreur création copie')
+
+      if (items.length > 0) {
+        await supabase.from('component_items').insert(
+          items.map((ci) => ({
+            component_id: created.id,
+            sub_component_id: ci.sub_component_id,
+            quantity: ci.quantity,
+          }))
+        )
+      }
+
+      await load()
+      // Open edit form on the new copy so user can rename immediately
+      openEditComp(created)
+    } catch (e: any) {
+      setError(e.message || 'Erreur lors de la duplication')
+    }
+    setSaving(false)
+  }
+
   const itemsFor = (compId: string) =>
     componentItems.filter((ci) => ci.component_id === compId)
 
@@ -227,6 +274,16 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
           }`}
         >
           Sous-composants ({subComponents.length})
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setShowImport(true)}
+          className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+        >
+          Import CSV
         </button>
       </div>
 
@@ -416,6 +473,13 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                       </button>
                       <div className="flex gap-3 flex-shrink-0">
                         <button onClick={() => openEditComp(c)} className="text-xs text-gray-500 hover:text-black">Modifier</button>
+                        <button
+                          onClick={() => duplicateComp(c)}
+                          disabled={saving}
+                          className="text-xs text-gray-500 hover:text-black disabled:opacity-50"
+                        >
+                          Dupliquer
+                        </button>
                         <button onClick={() => deleteComp(c.id)} className="text-red-500 text-xs hover:underline">Supprimer</button>
                       </div>
                     </div>
@@ -437,6 +501,13 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             )}
           </div>
         </div>
+      )}
+
+      {showImport && (
+        <ImportCsvModal
+          onClose={() => setShowImport(false)}
+          onDone={() => { load(); }}
+        />
       )}
     </div>
   )
