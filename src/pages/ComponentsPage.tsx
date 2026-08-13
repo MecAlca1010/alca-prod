@@ -194,7 +194,6 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     const items = itemsFor(c.id)
     const baseName = c.part_number
     let newPart = `${baseName}-copie`
-    // Ensure unique part number
     const existingParts = new Set(components.map((x) => x.part_number))
     let n = 2
     while (existingParts.has(newPart)) {
@@ -216,18 +215,32 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
       if (err || !created) throw new Error(err?.message || 'Erreur création copie')
 
       if (items.length > 0) {
-        await supabase.from('component_items').insert(
+        const { error: linkErr } = await supabase.from('component_items').insert(
           items.map((ci) => ({
             component_id: created.id,
             sub_component_id: ci.sub_component_id,
             quantity: ci.quantity,
           }))
         )
+        if (linkErr) throw new Error(linkErr.message)
       }
 
       await load()
-      // Open edit form on the new copy so user can rename immediately
-      openEditComp(created)
+
+      // Open edit form with the COPIED lines (don't rely on React state after load)
+      setEditingCompId(created.id)
+      setCompPart(created.part_number)
+      setCompDesc(created.description)
+      setCompSubs(
+        items
+          .filter((ci) => ci.sub_component_id)
+          .map((ci) => ({
+            subId: ci.sub_component_id,
+            qty: Number(ci.quantity) || 1,
+          }))
+      )
+      setShowCompForm(true)
+      setTab('components')
     } catch (e: any) {
       setError(e.message || 'Erreur lors de la duplication')
     }
