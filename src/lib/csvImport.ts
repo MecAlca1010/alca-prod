@@ -22,8 +22,12 @@ export function parseCSV(text: string): string[][] {
         cell += ch
       }
     } else {
-      if (ch === '"') {
+      // Only treat " as CSV quote delimiter at the START of a cell.
+      // Inch marks in text like 1/4" or 6" must stay as normal characters.
+      if (ch === '"' && cell.length === 0) {
         inQuotes = true
+      } else if (ch === '"') {
+        cell += ch
       } else if (ch === ',' || ch === ';') {
         row.push(cell.trim())
         cell = ''
