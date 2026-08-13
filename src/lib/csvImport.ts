@@ -101,38 +101,74 @@ export function parseSubRows(rows: string[][]): SubImportRow[] {
   return result
 }
 
-/** BOM-style: component + sub lines */
+/** BOM-style: component + sub lines
+ * Supported headers (flexible), e.g.:
+ *   numero_piece, description, sous_composant, quantite
+ *   composant_part, composant_desc, sous_part, sous_desc, quantite
+ */
 export function parseBomRows(rows: string[][]): CompBomImportRow[] {
   if (rows.length === 0) return []
-  const header = rows[0].map((h) => h.toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
-  const isHeader = header.some((h) => h.includes('composant') || h.includes('component') || h.includes('sub') || h.includes('qte') || h.includes('qty'))
+  const header = rows[0].map((h) =>
+    h.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[\s_]+/g, '_')
+  )
 
+  const isHeader = header.some((h) =>
+    /piece|part|numero|composant|component|sous|sub|qte|qty|quantite|description/.test(h)
+  )
   const data = isHeader ? rows.slice(1) : rows
 
-  const find = (preds: string[], fallback: number) => {
-    const i = header.findIndex((h) => preds.some((p) => h.includes(p)))
-    return i >= 0 ? i : fallback
+  // Prefer specific matches; avoid matching "sous_composant" as the main component column
+  const findCol = (preds: RegExp[], fallback: number) => {
+    if (!isHeader) return fallback
+    for (const re of preds) {
+      const i = header.findIndex((h) => re.test(h))
+      if (i >= 0) return i
+    }
+    return fallback
   }
 
-  const cPart = isHeader ? find(['composant_part', 'comp_part', 'component_part', 'composant'], 0) : 0
-  const cDesc = isHeader ? find(['composant_desc', 'comp_desc', 'component_desc', 'comp_description'], 1) : 1
-  const sPart = isHeader ? find(['sous_part', 'sub_part', 'sous-composant', 'sub_component'], 2) : 2
-  const sDesc = isHeader ? find(['sous_desc', 'sub_desc', 'sous_description'], 3) : 3
-  const qtyI = isHeader ? find(['qte', 'qty', 'quantity', 'quantite'], 4) : 4
+  const cPart = findCol(
+    [
+      /^(composant_part|comp_part|component_part|component|composant)$/,
+      /numero_piece|n[_]?piece|part_number|sku|^numero$|^piece$/,
+      /^composant(?!.*sous)/, // "composant" but not "sous_composant"
+    ],
+    0
+  )
+  const cDesc = findCol(
+    [/composant_desc|comp_desc|component_desc|comp_description/, /^description$/, /^desc$/],
+    cPart === 0 ? 1 : Math.min(1, header.length - 1)
+  )
+  const sPart = findCol(
+    [
+      /sous_composant|sous-composant|sous_part|sub_part|sub_component|sous_piece/,
+      /^sous$|^sub$/,
+    ],
+    2
+  )
+  const sDesc = findCol([/sous_desc|sub_desc|sous_description|sub_description/], -1)
+  const qtyI = findCol([/quantite|quantity|^qte$|^qty$/], header.length >= 5 ? 4 : 3)
 
   const result: CompBomImportRow[] = []
   for (const r of data) {
     const component_part = (r[cPart] || '').trim()
     const sub_part = (r[sPart] || '').trim()
     if (!component_part || !sub_part) continue
-    let quantity = parseFloat((r[qtyI] || '1').replace(',', '.'))
+    // Guard: if detection swapped columns, skip nonsense
+    if (component_part === sub_part) continue
+
+    let quantity = parseFloat(String(r[qtyI] ?? '1').replace(',', '.'))
     if (isNaN(quantity) || quantity <= 0) quantity = 1
-    quantity = roundQty(Math.round(quantity * 10000) / 10000) // input up to 4 decimals conceptually, store 2
+    quantity = roundQty(Math.round(quantity * 10000) / 10000)
+
+    const sub_desc =
+      sDesc >= 0 ? (r[sDesc] || '').trim() || sub_part : sub_part
+
     result.push({
       component_part,
       component_desc: (r[cDesc] || '').trim() || component_part,
       sub_part,
-      sub_desc: (r[sDesc] || '').trim() || sub_part,
+      sub_desc,
       quantity,
     })
   }
