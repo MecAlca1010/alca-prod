@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Project, ProjectStage, Stage, ProjectStatus, Component, ProjectComponent } from '../types/database'
+import type { Project, ProjectStage, Stage, ProjectStatus, Component, ProjectComponent, HiabModel } from '../types/database'
 
 interface ProjectDetailProps {
   isAdmin: boolean
@@ -29,6 +29,7 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const [projectNumber, setProjectNumber] = useState('')
   const [description, setDescription] = useState('')
   const [hiabModel, setHiabModel] = useState('')
+  const [hiabModels, setHiabModels] = useState<HiabModel[]>([])
   const [serialNumber, setSerialNumber] = useState('')
   const [vin, setVin] = useState('')
   const [status, setStatus] = useState<ProjectStatus>('a_venir')
@@ -64,6 +65,8 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
     setProjectNumber(p.project_number)
     setDescription(p.description || '')
     setHiabModel(p.hiab_model || '')
+    const { data: models } = await supabase.from('hiab_models').select('*').eq('is_active', true).order('name')
+    if (models) setHiabModels(models)
     setSerialNumber(p.serial_number || '')
     setVin(p.vin || '')
     setStatus(p.status)
@@ -252,8 +255,19 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
             <div>
               <label className="block text-xs text-gray-500 mb-1">Modèle Hiab</label>
               {isAdmin ? (
-                <input value={hiabModel} onChange={(e) => setHiabModel(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow" />
+                <select
+                  value={hiabModel}
+                  onChange={(e) => setHiabModel(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow"
+                >
+                  <option value="">— Sélectionner —</option>
+                  {hiabModels.map((m) => (
+                    <option key={m.id} value={m.name}>{m.name}</option>
+                  ))}
+                  {hiabModel && !hiabModels.some((m) => m.name === hiabModel) && (
+                    <option value={hiabModel}>{hiabModel} (hors catalogue)</option>
+                  )}
+                </select>
               ) : <p>{project.hiab_model || '—'}</p>}
             </div>
             <div>

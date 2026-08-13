@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
 import ComponentsPage from './pages/ComponentsPage'
+import HiabModelsPage from './pages/HiabModelsPage'
 import Layout from './components/Layout'
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
         <Route path="/" element={<Dashboard isAdmin={!!session} />} />
         <Route path="/projet/:id" element={<ProjectDetail isAdmin={!!session} />} />
         <Route path="/composants" element={<ComponentsPage isAdmin={!!session} />} />
+        <Route path="/modeles-hiab" element={<HiabModelsPage isAdmin={!!session} />} />
       </Routes>
     </Layout>
   )

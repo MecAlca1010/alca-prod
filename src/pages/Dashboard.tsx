@@ -353,6 +353,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             >
               Composants
             </Link>
+            <Link
+              to="/modeles-hiab"
+              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
+            >
+              Modèles Hiab
+            </Link>
             <button
               onClick={() => setShowDurationsModal(true)}
               className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition"
