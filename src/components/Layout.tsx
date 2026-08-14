@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { useState } from 'react'
+import AssistantPanel from './AssistantPanel'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -15,6 +16,7 @@ export default function Layout({ children, session, setSession }: LayoutProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showAssistant, setShowAssistant] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,6 +55,14 @@ export default function Layout({ children, session, setSession }: LayoutProps) {
           </Link>
 
           <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setShowAssistant(true)}
+              className="text-sm bg-alca-gray hover:bg-gray-600 px-3 py-1.5 rounded transition"
+              title="Assistant production"
+            >
+              Assistant
+            </button>
             {session ? (
               <>
                 <span className="text-sm text-gray-300 hidden sm:inline">
@@ -137,6 +147,12 @@ export default function Layout({ children, session, setSession }: LayoutProps) {
           </div>
         </div>
       )}
+
+      <AssistantPanel
+        open={showAssistant}
+        onClose={() => setShowAssistant(false)}
+        isAdmin={!!session}
+      />
     </div>
   )
 }
