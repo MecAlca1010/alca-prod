@@ -166,7 +166,22 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   ) => {
     setIsOptimizing(true)
     try {
-      const result = scheduleProjects(projs, pStages, stgs)
+      // Load capacities, Porte 8 blocks, and overlap setting
+      const [resCap, resBlocks, resSettings] = await Promise.all([
+        supabase.from('resources').select('id, capacity'),
+        supabase.from('resource_blocks').select('resource_id, start_date, end_date'),
+        supabase.from('scheduling_settings').select('key, value'),
+      ])
+      const capacities: Record<string, number> = {}
+      for (const r of resCap.data || []) capacities[r.id] = r.capacity
+      const overlapRow = (resSettings.data || []).find((s: any) => s.key === 'grue_habillage_max_overlap_days')
+      const grueHabillageMaxOverlap = overlapRow ? parseInt(overlapRow.value) || 1 : 1
+
+      const result = scheduleProjects(projs, pStages, stgs, {
+        capacities: capacities as any,
+        blocks: resBlocks.data || [],
+        grueHabillageMaxOverlap,
+      })
 
       // Persist dates to project_stages
       const updates = result.stages.map((s) =>

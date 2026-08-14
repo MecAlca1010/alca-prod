@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
 import ComponentsPage from './pages/ComponentsPage'
 import HiabModelsPage from './pages/HiabModelsPage'
+import RulesPage from './pages/RulesPage'
 import Layout from './components/Layout'
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
         <Route path="/projet/:id" element={<ProjectDetail isAdmin={!!session} />} />
         <Route path="/composants" element={<ComponentsPage isAdmin={!!session} />} />
         <Route path="/modeles-hiab" element={<HiabModelsPage isAdmin={!!session} />} />
+        <Route path="/regles" element={<RulesPage isAdmin={!!session} />} />
       </Routes>
     </Layout>
   )
