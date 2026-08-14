@@ -71,7 +71,7 @@ exports.handler = async (event) => {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'grok-3',
+        model: 'grok-4.3',
         messages: xaiMessages,
         temperature: 0.3,
       }),
@@ -79,7 +79,12 @@ exports.handler = async (event) => {
 
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const msg = data.error?.message || data.message || `xAI HTTP ${res.status}`
+      const msg =
+        (typeof data.error === 'string' ? data.error : null) ||
+        data.error?.message ||
+        data.message ||
+        JSON.stringify(data).slice(0, 300) ||
+        `xAI HTTP ${res.status}`
       return json(502, { error: msg })
     }
 
