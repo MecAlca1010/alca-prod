@@ -16,12 +16,19 @@ import type { ScheduledStage } from '../lib/scheduler'
 import { checkManualChange } from '../lib/constraints'
 import ConfirmModal from './ConfirmModal'
 
+export interface ResourceBlockBar {
+  start_date: string
+  end_date: string
+  reason?: string | null
+}
+
 interface ProductionCalendarProps {
   scheduledStages: ScheduledStage[]
   isAdmin: boolean
   onReoptimize?: () => void
   isOptimizing?: boolean
   onStageDatesChange?: (stage: ScheduledStage) => Promise<void>
+  resourceBlocks?: ResourceBlockBar[]
 }
 
 type DragMode = 'move' | 'resize-left' | 'resize-right' | null
@@ -32,6 +39,7 @@ export default function ProductionCalendar({
   onReoptimize,
   isOptimizing,
   onStageDatesChange,
+  resourceBlocks = [],
 }: ProductionCalendarProps) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [expanded, setExpanded] = useState(false)
@@ -120,8 +128,8 @@ export default function ProductionCalendar({
   }
 
   const applyStageUpdate = useCallback(
-    (updated: ScheduledStage) => {
-      const all = localStages.map((s) =>
+    (updated: ScheduledStage, allStages: ScheduledStage[]) => {
+      const all = allStages.map((s) =>
         s.projectStageId === updated.projectStageId ? updated : s
       )
       const issues = checkManualChange(updated, all)
@@ -129,12 +137,14 @@ export default function ProductionCalendar({
         setPendingStage(updated)
         setViolations(issues.map((i) => i.message))
         setConfirmOpen(true)
+        // keep visual at updated position until user confirms/cancels
+        setLocalStages(all)
       } else {
         setLocalStages(all)
         onStageDatesChange?.(updated)
       }
     },
-    [localStages, onStageDatesChange]
+    [onStageDatesChange]
   )
 
   const handleConfirmOverride = async () => {
@@ -266,7 +276,7 @@ export default function ProductionCalendar({
             updated.endDate !== originalStage.current.endDate
           if (changed) {
             // Defer validation
-            setTimeout(() => applyStageUpdate(updated), 0)
+            setTimeout(() => applyStageUpdate(updated, current), 0)
           } else {
             originalStage.current = null
           }
@@ -316,7 +326,23 @@ export default function ProductionCalendar({
       {isAdmin && (
         <p className="text-xs text-gray-400 mb-3">
           Mode admin : glisse le milieu d’une barre pour la déplacer, les bords pour changer la durée.
+          Si une règle est cassée, une confirmation s’affiche.
         </p>
+      )}
+
+      {resourceBlocks.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2 text-xs">
+          {resourceBlocks.map((b, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1.5 bg-red-50 text-red-800 border border-red-200 px-2 py-1 rounded"
+            >
+              <span className="w-2 h-2 rounded-sm bg-red-400" />
+              Porte 8 bloquée {b.start_date} → {b.end_date}
+              {b.reason ? ` — ${b.reason}` : ''}
+            </span>
+          ))}
+        </div>
       )}
 
       {expanded && localStages.length > 0 && (

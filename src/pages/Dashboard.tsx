@@ -38,6 +38,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
+  const [resourceBlocks, setResourceBlocks] = useState<{ start_date: string; end_date: string; reason?: string | null }[]>([])
 
   // Confirmation modal state
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -61,6 +62,16 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     setStages(stgs)
     setProjectStages(pStages)
     setLoading(false)
+
+    // Porte 8 blocks for calendar banner
+    {
+      const { data: bl } = await supabase
+        .from('resource_blocks')
+        .select('start_date, end_date, reason, resource_id')
+        .eq('resource_id', 'porte_8')
+        .order('start_date')
+      setResourceBlocks(bl || [])
+    }
 
     // Auto-schedule if we have data
     if (projs.length > 0 && pStages.length > 0) {
@@ -399,6 +410,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             onReoptimize={handleReoptimize}
             isOptimizing={isOptimizing}
             onStageDatesChange={handleStageDatesChange}
+            resourceBlocks={resourceBlocks}
           />
 
           {/* Legend */}
