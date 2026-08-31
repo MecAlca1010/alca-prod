@@ -61,6 +61,7 @@ export default function ProductionCalendar({
   const [pendingStage, setPendingStage] = useState<ScheduledStage | null>(null)
   const [violations, setViolations] = useState<string[]>([])
   const originalStage = useRef<ScheduledStage | null>(null)
+  const stagesBeforeEdit = useRef<ScheduledStage[] | null>(null)
 
   const baseWeekStart = useMemo(() => startOfWeek(new Date()), [])
 
@@ -156,22 +157,34 @@ export default function ProductionCalendar({
     await onStageDatesChange?.(pendingStage)
     setPendingStage(null)
     originalStage.current = null
+    stagesBeforeEdit.current = null
+    setViolations([])
   }
 
   const handleCancelOverride = () => {
-    setConfirmOpen(false)
-    // Revert visual to original
-    if (originalStage.current) {
-      setLocalStages((prev) =>
-        prev.map((s) =>
-          s.projectStageId === originalStage.current!.projectStageId
-            ? originalStage.current!
-            : s
+    try {
+      setConfirmOpen(false)
+      setPendingStage(null)
+      setViolations([])
+      // Restore full snapshot from before the drag (avoids blank screen / stale state)
+      if (stagesBeforeEdit.current && stagesBeforeEdit.current.length > 0) {
+        setLocalStages(stagesBeforeEdit.current.map((s) => ({ ...s })))
+      } else if (originalStage.current) {
+        const orig = originalStage.current
+        setLocalStages((prev) =>
+          prev.map((s) => (s.projectStageId === orig.projectStageId ? { ...orig } : s))
         )
-      )
+      } else {
+        setLocalStages(scheduledStages.map((s) => ({ ...s })))
+      }
+    } catch (e) {
+      console.error('Cancel override failed', e)
+      setLocalStages(scheduledStages.map((s) => ({ ...s })))
+      setConfirmOpen(false)
+    } finally {
+      originalStage.current = null
+      stagesBeforeEdit.current = null
     }
-    setPendingStage(null)
-    originalStage.current = null
   }
 
   // --- Pointer handlers for drag/resize ---
@@ -187,6 +200,7 @@ export default function ProductionCalendar({
     setDragMode(mode)
     setDragStageId(stage.projectStageId)
     originalStage.current = { ...stage }
+    stagesBeforeEdit.current = localStages.map((s) => ({ ...s }))
     dragOrigin.current = {
       x: e.clientX,
       startDate: stage.startDate,

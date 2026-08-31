@@ -15,6 +15,7 @@
 
 import { formatDate, nextBusinessDay, isBusinessDay } from './dates'
 import type { Project, ProjectStage, Stage } from '../types/database'
+import { durationDaysForStage, hoursPerDayForStage, isoWeekKey, DEFAULT_MAX_TECHS } from './labor'
 
 export interface ScheduledStage {
   projectStageId: string
@@ -47,13 +48,16 @@ export interface ResourceBlock {
 }
 
 export interface ScheduleOptions {
-  /** resource_id -> capacity */
   capacities?: Partial<Record<ResourceId, number>>
-  /** blocked date ranges */
   blocks?: ResourceBlock[]
-  /** max business-day overlap between grue and habillage on same project */
   grueHabillageMaxOverlap?: number
   startFrom?: Date
+  /** projectId -> stageSlug -> labor hours */
+  laborByProject?: Record<string, Record<string, number>>
+  maxTechs?: Record<string, number>
+  /** ISO week key -> available shop hours */
+  weeklyHourCapacity?: Record<string, number>
+  defaultWeeklyHours?: number
 }
 
 const DEFAULT_CAPACITY: Record<ResourceId, number> = {
@@ -131,6 +135,41 @@ function occupy(
   return { start: actualStart, end: new Date(current) }
 }
 
+function weekHoursOk(
+  start: Date,
+  duration: number,
+  hoursPerDay: number,
+  weekUsed: Record<string, number>,
+  weeklyCap: Record<string, number>,
+  defaultWeekly: number
+): boolean {
+  if (!hoursPerDay || hoursPerDay <= 0) return true
+  const add: Record<string, number> = {}
+  const ok = eachBusinessDay(start, duration, (d) => {
+    const w = isoWeekKey(d)
+    add[w] = (add[w] || 0) + hoursPerDay
+  })
+  if (!ok) return false
+  for (const [w, h] of Object.entries(add)) {
+    const cap = weeklyCap[w] ?? defaultWeekly
+    if ((weekUsed[w] || 0) + h > cap + 0.01) return false
+  }
+  return true
+}
+
+function occupyWeekHours(
+  start: Date,
+  duration: number,
+  hoursPerDay: number,
+  weekUsed: Record<string, number>
+) {
+  if (!hoursPerDay) return
+  eachBusinessDay(start, duration, (d) => {
+    const w = isoWeekKey(d)
+    weekUsed[w] = (weekUsed[w] || 0) + hoursPerDay
+  })
+}
+
 function findSlot(
   occupancy: Occupancy,
   from: Date,
@@ -138,12 +177,19 @@ function findSlot(
   resource: ResourceId,
   capacity: number,
   blocks: ResourceBlock[],
+  hoursPerDay: number,
+  weekUsed: Record<string, number>,
+  weeklyCap: Record<string, number>,
+  defaultWeekly: number,
   maxAttempts = 180
 ): Date | null {
   let tryStart = new Date(from)
   if (!isBusinessDay(tryStart)) tryStart = nextBusinessDay(tryStart)
   for (let a = 0; a < maxAttempts; a++) {
-    if (canPlace(occupancy, tryStart, duration, resource, capacity, blocks)) {
+    if (
+      canPlace(occupancy, tryStart, duration, resource, capacity, blocks) &&
+      weekHoursOk(tryStart, duration, hoursPerDay, weekUsed, weeklyCap, defaultWeekly)
+    ) {
       return tryStart
     }
     tryStart = nextBusinessDay(tryStart)
@@ -194,8 +240,15 @@ export function scheduleProjects(
   const blocks = options.blocks || []
   const maxGHOverlap = options.grueHabillageMaxOverlap ?? 1
   const startFrom = options.startFrom || new Date()
+  const laborByProject = options.laborByProject || {}
+  const maxTechs = { ...DEFAULT_MAX_TECHS, ...options.maxTechs }
+  const weeklyCap = options.weeklyHourCapacity || {}
+  const defaultWeekly = options.defaultWeeklyHours ?? 240
+  const weekUsed: Record<string, number> = {}
 
-  const sortedProjects = [...projects].sort((a, b) => a.priority_order - b.priority_order)
+  const sortedProjects = [...projects]
+    .filter((p) => !(p as Project & { is_closed?: boolean }).is_closed)
+    .sort((a, b) => a.priority_order - b.priority_order)
   const occupancy: Occupancy = {}
   const result: ScheduledStage[] = []
   const estimatedDeliveries: Record<string, string> = {}
@@ -224,14 +277,34 @@ export function scheduleProjects(
 
     const placeOne = (ps: PS & { stage: Stage }, notBefore: Date): boolean => {
       const stage = ps.stage
-      const duration = ps.duration_days || stage.default_duration_days || 1
+      const laborH = laborByProject[project.id]?.[stage.slug] || 0
+      const mt = maxTechs[stage.slug] ?? 1
+      const duration = durationDaysForStage({
+        slug: stage.slug,
+        defaultDays: stage.default_duration_days || 1,
+        laborHours: laborH,
+        maxTechs: mt,
+      })
+      const hpd = hoursPerDayForStage(stage.slug, laborH, mt, duration)
       const resource = resourceForSlug(stage.slug)
       const capacity = capacities[resource]
 
-      const slot = findSlot(occupancy, notBefore, duration, resource, capacity, blocks)
+      const slot = findSlot(
+        occupancy,
+        notBefore,
+        duration,
+        resource,
+        capacity,
+        blocks,
+        hpd,
+        weekUsed,
+        weeklyCap,
+        defaultWeekly
+      )
       if (!slot) return false
 
       const { start, end } = occupy(occupancy, slot, duration, resource)
+      occupyWeekHours(slot, duration, hpd, weekUsed)
       placed[stage.slug] = { start, end }
       result.push({
         projectStageId: ps.id,
@@ -283,17 +356,29 @@ export function scheduleProjects(
 
       // If grue exists, ensure overlap ≤ maxGHOverlap
       if (placed.grue) {
-        const duration = bySlug.habillage.duration_days || bySlug.habillage.stage.default_duration_days || 1
+        const laborH = laborByProject[project.id]?.habillage || 0
+        const mt = maxTechs.habillage ?? 2
+        const duration = durationDaysForStage({
+          slug: 'habillage',
+          defaultDays: bySlug.habillage.stage.default_duration_days || 1,
+          laborHours: laborH,
+          maxTechs: mt,
+        })
+        const hpd = hoursPerDayForStage('habillage', laborH, mt, duration)
         const resource = resourceForSlug('habillage')
         const capacity = capacities[resource]
         let tryStart = new Date(after)
         let ok = false
         for (let a = 0; a < 180; a++) {
-          if (canPlace(occupancy, tryStart, duration, resource, capacity, blocks)) {
+          if (
+            canPlace(occupancy, tryStart, duration, resource, capacity, blocks) &&
+            weekHoursOk(tryStart, duration, hpd, weekUsed, weeklyCap, defaultWeekly)
+          ) {
             const tryEnd = endOfStage(tryStart, duration)
             const ov = overlapBusinessDays(placed.grue.start, placed.grue.end, tryStart, tryEnd)
             if (ov <= maxGHOverlap) {
               const { start, end } = occupy(occupancy, tryStart, duration, resource)
+              occupyWeekHours(tryStart, duration, hpd, weekUsed)
               placed.habillage = { start, end }
               result.push({
                 projectStageId: bySlug.habillage.id,

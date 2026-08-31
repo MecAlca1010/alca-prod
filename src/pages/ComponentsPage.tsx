@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Component, SubComponent, ComponentItem } from '../types/database'
 import ImportCsvModal from '../components/ImportCsvModal'
+import ImportLaborModal from '../components/ImportLaborModal'
+import { STAGE_OPTIONS } from '../lib/labor'
 
 interface ComponentsPageProps {
   isAdmin: boolean
@@ -26,12 +28,15 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
   const [editingCompId, setEditingCompId] = useState<string | null>(null)
   const [compPart, setCompPart] = useState('')
   const [compDesc, setCompDesc] = useState('')
+  const [compStage, setCompStage] = useState('')
+  const [compHours, setCompHours] = useState('')
   const [compSubs, setCompSubs] = useState<{ subId: string; qty: number }[]>([])
 
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showLaborImport, setShowLaborImport] = useState(false)
 
   const load = async () => {
     const [c, s, ci] = await Promise.all([
@@ -62,6 +67,8 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     setEditingCompId(null)
     setCompPart('')
     setCompDesc('')
+    setCompStage('')
+    setCompHours('')
     setCompSubs([])
     setError('')
   }
@@ -78,6 +85,8 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     setEditingCompId(c.id)
     setCompPart(c.part_number)
     setCompDesc(c.description)
+    setCompStage(c.stage_slug || '')
+    setCompHours(c.labor_hours != null && c.labor_hours !== undefined ? String(c.labor_hours) : '')
     const items = componentItems.filter((ci) => ci.component_id === c.id)
     setCompSubs(
       items.map((ci) => ({
@@ -137,7 +146,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     if (editingCompId) {
       const { error: err } = await supabase
         .from('components')
-        .update({ part_number: compPart.trim(), description: compDesc.trim() })
+        .update({ part_number: compPart.trim(), description: compDesc.trim(), stage_slug: compStage || null, labor_hours: compHours === '' ? null : Math.round(parseFloat(compHours) * 100) / 100 })
         .eq('id', editingCompId)
       if (err) {
         setError(err.message.includes('duplicate') ? 'Ce numéro de pièce existe déjà' : err.message)
@@ -149,7 +158,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
     } else {
       const { data, error: err } = await supabase
         .from('components')
-        .insert({ part_number: compPart.trim(), description: compDesc.trim() })
+        .insert({ part_number: compPart.trim(), description: compDesc.trim(), stage_slug: compStage || null, labor_hours: compHours === '' ? null : Math.round(parseFloat(compHours) * 100) / 100 })
         .select()
         .single()
       if (err || !data) {
@@ -298,6 +307,13 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
         >
           Import CSV
         </button>
+        <button
+          type="button"
+          onClick={() => setShowLaborImport(true)}
+          className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+        >
+          Import heures
+        </button>
       </div>
 
       {error && (
@@ -391,6 +407,35 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                   <label className="text-xs text-gray-500">Description</label>
                   <input value={compDesc} onChange={(e) => setCompDesc(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-alca-yellow focus:outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500">Étape</label>
+                  <select
+                    value={compStage}
+                    onChange={(e) => setCompStage(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">— Aucune —</option>
+                    {STAGE_OPTIONS.map((s) => (
+                      <option key={s.slug} value={s.slug}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Main d'œuvre (h)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.25}
+                    value={compHours}
+                    onChange={(e) => setCompHours(e.target.value)}
+                    placeholder="vide = négligeable"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
                 </div>
               </div>
 
@@ -519,6 +564,12 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
       {showImport && (
         <ImportCsvModal
           onClose={() => setShowImport(false)}
+          onDone={() => { load(); }}
+        />
+      )}
+      {showLaborImport && (
+        <ImportLaborModal
+          onClose={() => setShowLaborImport(false)}
           onDone={() => { load(); }}
         />
       )}

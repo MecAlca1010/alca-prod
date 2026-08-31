@@ -7,6 +7,8 @@ import ProjectDetail from './pages/ProjectDetail'
 import ComponentsPage from './pages/ComponentsPage'
 import HiabModelsPage from './pages/HiabModelsPage'
 import RulesPage from './pages/RulesPage'
+import TechniciansPage from './pages/TechniciansPage'
+import DeliveredPage from './pages/DeliveredPage'
 import Layout from './components/Layout'
 
 function App() {
@@ -42,6 +44,8 @@ function App() {
         <Route path="/composants" element={<ComponentsPage isAdmin={!!session} />} />
         <Route path="/modeles-hiab" element={<HiabModelsPage isAdmin={!!session} />} />
         <Route path="/regles" element={<RulesPage isAdmin={!!session} />} />
+        <Route path="/techniciens" element={<TechniciansPage isAdmin={!!session} />} />
+        <Route path="/livres" element={<DeliveredPage isAdmin={!!session} />} />
       </Routes>
     </Layout>
   )

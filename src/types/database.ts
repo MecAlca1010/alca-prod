@@ -1,4 +1,4 @@
-export type ProjectStatus = 'en_cours' | 'a_venir' | 'en_preparation' | 'camion_recu'
+export type ProjectStatus = 'en_cours' | 'a_venir' | 'en_preparation' | 'camion_recu' | 'livre'
 
 export interface Stage {
   id: string
@@ -21,6 +21,8 @@ export interface Project {
   priority_order: number
   sharepoint_url: string | null
   estimated_delivery_date: string | null
+  is_closed?: boolean
+  closed_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -54,7 +56,25 @@ export interface Component {
   id: string
   part_number: string
   description: string
+  stage_slug?: string | null
+  labor_hours?: number | null
   created_at?: string
+}
+
+export interface Technician {
+  id: string
+  first_name: string
+  last_name: string
+  hours_per_week: number
+  is_active: boolean
+}
+
+export interface TechnicianTimeOff {
+  id: string
+  technician_id: string
+  start_date: string
+  end_date: string
+  reason: string | null
 }
 
 export interface ComponentItem {

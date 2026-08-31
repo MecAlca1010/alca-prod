@@ -7,6 +7,8 @@ import ProductionCalendar from '../components/ProductionCalendar'
 import ConfirmModal from '../components/ConfirmModal'
 import StageDurationsModal from '../components/StageDurationsModal'
 import { scheduleProjects, type ScheduledStage } from '../lib/scheduler'
+import { laborHoursForProjectStage } from '../lib/labor'
+import { buildWeeklyHourCapacity } from '../lib/weeklyCapacity'
 
 interface DashboardProps {
   isAdmin: boolean
@@ -54,7 +56,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       supabase.from('project_stages').select('*, stage:stages(*)'),
     ])
 
-    const projs = projectsRes.data || []
+    const projs = (projectsRes.data || []).filter((p: Project) => !p.is_closed)
     const stgs = stagesRes.data || []
     const pStages = (psRes.data || []) as (ProjectStage & { stage?: Stage })[]
 
@@ -95,7 +97,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
 
         for (const pc of pcs as any[]) {
           const status = pc.project?.status as string | undefined
-          if (!status) continue
+          if (!status || status === 'livre' || pc.project?.is_closed) continue
           if (!compBuckets[pc.component_id]) {
             compBuckets[pc.component_id] = { en_production: 0, a_preparer: 0, a_venir: 0 }
           }
@@ -178,20 +180,49 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     setIsOptimizing(true)
     try {
       // Load capacities, Porte 8 blocks, and overlap setting
-      const [resCap, resBlocks, resSettings] = await Promise.all([
+      const [resCap, resBlocks, resSettings, pcsRes, techRes, offRes] = await Promise.all([
         supabase.from('resources').select('id, capacity'),
         supabase.from('resource_blocks').select('resource_id, start_date, end_date'),
         supabase.from('scheduling_settings').select('key, value'),
+        supabase.from('project_components').select('project_id, quantity, component:components(stage_slug, labor_hours)'),
+        supabase.from('technicians').select('*').eq('is_active', true),
+        supabase.from('technician_time_off').select('*'),
       ])
       const capacities: Record<string, number> = {}
       for (const r of resCap.data || []) capacities[r.id] = r.capacity
       const overlapRow = (resSettings.data || []).find((s: any) => s.key === 'grue_habillage_max_overlap_days')
       const grueHabillageMaxOverlap = overlapRow ? parseInt(overlapRow.value) || 1 : 1
+      const maxTechs: Record<string, number> = {}
+      for (const s of resSettings.data || []) {
+        if (s.key.startsWith('max_techs_')) maxTechs[s.key.replace('max_techs_', '')] = parseInt(s.value) || 0
+      }
+
+      const laborByProject: Record<string, Record<string, number>> = {}
+      const byProj: Record<string, any[]> = {}
+      for (const pc of pcsRes.data || []) {
+        if (!byProj[pc.project_id]) byProj[pc.project_id] = []
+        byProj[pc.project_id].push(pc)
+      }
+      for (const [pid, list] of Object.entries(byProj)) {
+        laborByProject[pid] = {}
+        for (const slug of ['acier', 'peinture', 'aluminium', 'grue', 'habillage', 'pdi', 'tests']) {
+          laborByProject[pid][slug] = laborHoursForProjectStage(slug, list as any)
+        }
+      }
+
+      const { weekly, defaultWeekly } = buildWeeklyHourCapacity(
+        (techRes.data || []) as any,
+        (offRes.data || []) as any
+      )
 
       const result = scheduleProjects(projs, pStages, stgs, {
         capacities: capacities as any,
         blocks: resBlocks.data || [],
         grueHabillageMaxOverlap,
+        laborByProject,
+        maxTechs,
+        weeklyHourCapacity: weekly,
+        defaultWeeklyHours: defaultWeekly,
       })
 
       // Persist dates to project_stages
@@ -385,6 +416,18 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             >
               Modèles Hiab
             </Link>
+            <Link
+              to="/regles"
+              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
+            >
+              Règles
+            </Link>
+            <Link
+              to="/techniciens"
+              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
+            >
+              Techniciens
+            </Link>
             <button
               onClick={() => setShowDurationsModal(true)}
               className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition"
@@ -493,6 +536,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
               })}
             </div>
           )}
+          <Link
+            to="/livres"
+            className="mt-4 block text-center text-sm border border-gray-300 py-2 rounded-lg hover:bg-gray-50"
+          >
+            Projets livrés
+          </Link>
         </div>
       </div>
 

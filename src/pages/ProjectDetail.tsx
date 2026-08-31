@@ -40,6 +40,7 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const [allComponents, setAllComponents] = useState<Component[]>([])
   const [projectComponents, setProjectComponents] = useState<(ProjectComponent & { component?: Component })[]>([])
   const [selectedCompIds, setSelectedCompIds] = useState<string[]>([])
+  const [selectedCompQty, setSelectedCompQty] = useState<Record<string, number>>({})
   const [showCompPicker, setShowCompPicker] = useState(false)
   const [compSaving, setCompSaving] = useState(false)
 
@@ -144,15 +145,19 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const saveProjectComponents = async () => {
     if (!project || !isAdmin) return
     setCompSaving(true)
-    // Delete existing then insert selected
     await supabase.from('project_components').delete().eq('project_id', project.id)
     if (selectedCompIds.length > 0) {
       await supabase.from('project_components').insert(
-        selectedCompIds.map((cid) => ({
-          project_id: project.id,
-          component_id: cid,
-          quantity: 1,
-        }))
+        selectedCompIds.map((cid) => {
+          let q = Number(selectedCompQty[cid])
+          if (!isFinite(q) || q <= 0) q = 1
+          q = Math.round(q * 100) / 100
+          return {
+            project_id: project.id,
+            component_id: cid,
+            quantity: q,
+          }
+        })
       )
     }
     const { data } = await supabase
@@ -167,13 +172,57 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   }
 
   const toggleCompSelect = (id: string) => {
-    setSelectedCompIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    setSelectedCompIds((prev) => {
+      if (prev.includes(id)) {
+        setSelectedCompQty((q) => {
+          const n = { ...q }
+          delete n[id]
+          return n
+        })
+        return prev.filter((x) => x !== id)
+      }
+      setSelectedCompQty((q) => ({ ...q, [id]: q[id] && q[id] > 0 ? q[id] : 1 }))
+      return [...prev, id]
+    })
+  }
+
+  const updateProjectCompQty = async (pcId: string, raw: number) => {
+    if (!isAdmin) return
+    let q = Number(raw)
+    if (!isFinite(q) || q <= 0) q = 1
+    q = Math.round(q * 100) / 100
+    const { error } = await supabase.from('project_components').update({ quantity: q }).eq('id', pcId)
+    if (!error) {
+      setProjectComponents((prev) => prev.map((pc) => (pc.id === pcId ? { ...pc, quantity: q } : pc)))
+    }
+  }
+
+  const handleClose = async () => {
+    if (!project || !isAdmin) return
+    if (
+      !confirm(
+        `Fermer le projet ${project.project_number} — ${project.client_name} ?\nIl ira dans Projets livrés et sortira du calendrier (réoptimisation au prochain chargement).`
+      )
     )
+      return
+    await supabase
+      .from('projects')
+      .update({ is_closed: true, closed_at: new Date().toISOString(), status: 'livre' })
+      .eq('id', project.id)
+    navigate('/')
+  }
+
+  const handleReopen = async () => {
+    if (!project || !isAdmin) return
+    if (!confirm('Réouvrir ce projet et le remettre au calendrier ?')) return
+    await supabase
+      .from('projects')
+      .update({ is_closed: false, closed_at: null, status: 'a_venir' })
+      .eq('id', project.id)
+    navigate('/')
   }
 
   const handleDelete = async () => {
-
     if (!project || !isAdmin) return
     if (!confirm(`Supprimer définitivement le projet ${project.project_number} — ${project.client_name} ?`)) return
     await supabase.from('projects').delete().eq('id', project.id)
@@ -390,6 +439,11 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
               <button
                 onClick={() => {
                   setSelectedCompIds(projectComponents.map((pc) => pc.component_id))
+                  const qty: Record<string, number> = {}
+                  for (const pc of projectComponents) {
+                    qty[pc.component_id] = Number(pc.quantity) || 1
+                  }
+                  setSelectedCompQty(qty)
                   setShowCompPicker(true)
                 }}
                 className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50"
@@ -404,12 +458,27 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
           ) : (
             <div className="space-y-1">
               {projectComponents.map((pc) => (
-                <div key={pc.id} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
-                  <div>
+                <div key={pc.id} className="flex items-center justify-between gap-3 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                  <div className="min-w-0">
                     <span className="font-medium">{pc.component?.part_number}</span>
                     <span className="text-gray-500 ml-2">{pc.component?.description}</span>
                   </div>
-                  <span className="text-gray-400 text-xs">× {pc.quantity}</span>
+                  {isAdmin ? (
+                    <label className="flex items-center gap-1 shrink-0 text-xs text-gray-500">
+                      Qté
+                      <input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        defaultValue={pc.quantity}
+                        key={`${pc.id}-${pc.quantity}`}
+                        onBlur={(e) => updateProjectCompQty(pc.id, parseFloat(e.target.value))}
+                        className="w-16 border rounded px-1.5 py-0.5 text-sm text-black"
+                      />
+                    </label>
+                  ) : (
+                    <span className="text-gray-400 text-xs">× {pc.quantity}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -440,10 +509,25 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
                           onChange={() => toggleCompSelect(c.id)}
                           className="w-4 h-4 accent-alca-yellow"
                         />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium">{c.part_number}</div>
                           <div className="text-xs text-gray-500 truncate">{c.description}</div>
                         </div>
+                        {selectedCompIds.includes(c.id) && (
+                          <input
+                            type="number"
+                            min={0.01}
+                            step={0.01}
+                            value={selectedCompQty[c.id] ?? 1}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value)
+                              setSelectedCompQty((q) => ({ ...q, [c.id]: isNaN(v) ? 0 : v }))
+                            }}
+                            className="w-16 border rounded px-1.5 py-1 text-sm"
+                            title="Quantité"
+                          />
+                        )}
                       </label>
                     ))
                   )}
@@ -464,8 +548,19 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
         </div>
 
         {isAdmin && (
-          <div className="pt-4 border-t">
-            <button onClick={handleDelete} className="text-red-600 text-sm hover:underline">Supprimer ce projet</button>
+          <div className="pt-4 border-t flex flex-wrap gap-4">
+            {project.is_closed ? (
+              <button onClick={handleReopen} className="text-sm hover:underline">
+                Réouvrir le projet
+              </button>
+            ) : (
+              <button onClick={handleClose} className="text-sm hover:underline">
+                Fermer le projet
+              </button>
+            )}
+            <button onClick={handleDelete} className="text-red-600 text-sm hover:underline">
+              Supprimer ce projet
+            </button>
           </div>
         )}
       </div>
