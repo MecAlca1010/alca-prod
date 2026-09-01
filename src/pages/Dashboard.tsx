@@ -173,6 +173,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const onReopt = () => loadData()
+    window.addEventListener('alca-reoptimize', onReopt as EventListener)
+    return () => window.removeEventListener('alca-reoptimize', onReopt as EventListener)
+  }, [loadData])
+
   const runSchedule = async (
     projs: Project[],
     pStages: (ProjectStage & { stage?: Stage })[],
@@ -216,6 +222,11 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         (offRes.data || []) as any
       )
 
+      const pins: Record<string, string> = {}
+      for (const ps of pStages as any[]) {
+        if (ps.is_pinned && ps.start_date) pins[ps.id] = ps.start_date
+      }
+
       const result = scheduleProjects(projs, pStages, stgs, {
         capacities: capacities as any,
         blocks: resBlocks.data || [],
@@ -224,6 +235,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         maxTechs,
         weeklyHourCapacity: weekly,
         defaultWeeklyHours: defaultWeekly,
+        pins,
       })
 
       // Persist dates to project_stages

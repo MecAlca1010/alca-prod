@@ -1,0 +1,1 @@
+ALTER TABLE project_stages ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT false;

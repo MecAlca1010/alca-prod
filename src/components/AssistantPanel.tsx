@@ -32,6 +32,7 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const [pendingOptions, setPendingOptions] = useState<any[]>([])
   const [actionMsg, setActionMsg] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -48,6 +49,7 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
     setError('')
     setActionMsg('')
     setPendingAction(null)
+    setPendingOptions([])
     const next: Msg[] = [...messages, { role: 'user', content: text }]
     setMessages(next)
     setLoading(true)
@@ -62,13 +64,18 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
           context,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`)
+      const raw = await res.text()
+      let data: any = {}
+      try {
+        data = JSON.parse(raw)
+      } catch {
+        throw new Error(raw.slice(0, 200) || `Erreur ${res.status}`)
+      }
+      if (!res.ok) throw new Error(data.error || data.message || `Erreur ${res.status}`)
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply || '(réponse vide)' }])
-      if (data.action && isAdmin) {
-        setPendingAction(data.action)
-      }
+      if (data.action && isAdmin) setPendingAction(data.action)
+      if (Array.isArray(data.options) && data.options.length && isAdmin) setPendingOptions(data.options)
     } catch (e: any) {
       setError(e.message || 'Erreur de communication avec l’assistant')
     }
@@ -100,6 +107,9 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
             content: `Action appliquée : Porte 8 bloquée (${pendingAction.start_date} → ${pendingAction.end_date}). Pense à réoptimiser le calendrier.`,
           },
         ])
+      } else if (pendingAction.type === 'reoptimize') {
+        window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+        setActionMsg('Réoptimisation demandée.')
       } else {
         setActionMsg(`Type d’action non supporté encore: ${pendingAction.type}`)
       }
@@ -107,6 +117,49 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
       setActionMsg(e.message || 'Échec de l’action')
     }
     setPendingAction(null)
+  }
+
+  const applyOption = async (opt: any) => {
+    if (!isAdmin) return
+    setActionMsg('')
+    try {
+      const actions = opt.actions || []
+      for (const act of actions) {
+        if (act.type === 'pin_stage') {
+          const { data: proj } = await supabase
+            .from('projects')
+            .select('id')
+            .eq('project_number', String(act.project_number))
+            .maybeSingle()
+          if (!proj) throw new Error(`Projet ${act.project_number} introuvable`)
+          const { data: st } = await supabase.from('stages').select('id').eq('slug', act.stage_slug).maybeSingle()
+          if (!st) throw new Error(`Étape ${act.stage_slug} introuvable`)
+          const { error } = await supabase
+            .from('project_stages')
+            .update({ start_date: act.start_date, is_pinned: true })
+            .eq('project_id', proj.id)
+            .eq('stage_id', st.id)
+          if (error) throw error
+        } else if (act.type === 'block_porte_8') {
+          const { error } = await supabase.from('resource_blocks').insert({
+            resource_id: 'porte_8',
+            start_date: act.start_date,
+            end_date: act.end_date,
+            reason: act.reason || 'Via assistant',
+          })
+          if (error) throw error
+        }
+      }
+      window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+      setPendingOptions([])
+      setActionMsg('Option appliquée. Le calendrier se réoptimise.')
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Option retenue : ${opt.title || 'changement appliqué'}. Calendrier en cours de mise à jour.` },
+      ])
+    } catch (e: any) {
+      setActionMsg(e.message || 'Échec')
+    }
   }
 
   return (
@@ -137,6 +190,25 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
           {loading && <div className="text-xs text-gray-400">Réflexion…</div>}
           {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
           {actionMsg && <div className="text-sm text-green-800 bg-green-50 p-2 rounded">{actionMsg}</div>}
+          {pendingOptions.length > 0 && (
+            <div className="space-y-2">
+              {pendingOptions.map((opt, i) => (
+                <div key={i} className="border border-amber-300 bg-amber-50 rounded-lg p-3 text-sm space-y-2">
+                  <div className="font-medium">{opt.title || `Option ${i + 1}`}</div>
+                  {opt.detail && <p className="text-xs text-gray-600 whitespace-pre-wrap">{opt.detail}</p>}
+                  <button
+                    onClick={() => applyOption(opt)}
+                    className="w-full bg-alca-yellow font-black py-1.5 rounded-lg text-sm"
+                  >
+                    Poursuivre cette option
+                  </button>
+                </div>
+              ))}
+              <button onClick={() => setPendingOptions([])} className="w-full border py-1.5 rounded-lg text-sm">
+                Aucune de ces options
+              </button>
+            </div>
+          )}
           {pendingAction && (
             <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 text-sm space-y-2">
               <div className="font-medium">Confirmation requise</div>

@@ -6,36 +6,40 @@
 const SYSTEM = `Tu es l'assistant de production d'ALCA Prod (Mécano Alca, Québec).
 Tu aides à planifier la fabrication de plateformes d'aluminium, sous-chassis, habillage et installation de grues Hiab sur camions.
 
-Règles métier importantes:
-- Portes: Porte 8 = peinture (1 camion). Portes 5+6 = polyvalentes (Acier, Grue, Habillage), max 2 camions. Jig = 1 plate-forme alu. PDI/Tests hors porte.
-- Dépendances: Acier avant Peinture (pas de chevauchement); Grue après sortie peinture; Habillage après Alu terminé; Grue/Habillage chevauchement max 1 jour ouvrable; PDI puis Tests après le gros œuvre.
-- Jours ouvrables lun–ven. Priorité projet en cas de conflit.
-- Porte 8 peut être bloquée (réparations).
+Règles métier:
+- Porte 8 = peinture (1). Portes 5+6 = Acier/Grue/Habillage, max 2 CAMIONS (pas 2 étapes). Jig = 1 alu. PDI/Tests hors porte.
+- Acier → Peinture (pas ensemble) → Grue après peinture.
+- Alu en parallèle mais on vise fin alu ≈ fin peinture (pas laisser le Jig bloqué des jours avant que le camion sorte).
+- Habillage seulement après Alu ET Acier ET Peinture (camion + plate-forme prêts). Grue/Habillage overlap max 1 jour.
+- PDI puis Tests après le gros œuvre. Jours ouvrables. Priorité en conflit.
+- Porte 8 blocable.
 
-Réponds en français, de façon claire et concrète. Base-toi UNIQUEMENT sur le CONTEXTE fourni (projets, calendrier, blocages). Si une info manque, dis-le.
-
-Quand l'utilisateur demande une action que tu peux proposer, termine ta réponse par UNE ligne exactement de ce format (sinon n'inclus pas de ligne ACTION):
-ACTION:{"type":"block_porte_8","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","reason":"..."}
-Types supportés pour l'instant:
+Réponds en français. Base-toi sur le CONTEXTE. Si l'utilisateur veut CHANGER le calendrier, propose 2 ou 3 OPTIONS clairement (impacts: Jig, priorité, retard d'un autre client). Termine alors par UNE ligne:
+OPTIONS:[{"title":"...","detail":"...","actions":[{"type":"pin_stage","project_number":"59845","stage_slug":"aluminium","start_date":"2026-09-28"}]}]
+Types d'actions:
+- pin_stage (project_number, stage_slug: acier|peinture|aluminium|grue|habillage|pdi|tests, start_date)
 - block_porte_8 (start_date, end_date, reason)
-Ne propose une ACTION que si la demande est claire. L'humain confirmera avant exécution.`
+- reoptimize
+Après choix humain, le client applique. Une petite action unique peut encore utiliser:
+ACTION:{"type":"block_porte_8",...}`
+
+const MODELS = ['grok-4.3', 'grok-4.5', 'grok-4.6']
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers: corsHeaders(),
-      body: '',
-    }
+    return { statusCode: 204, headers: corsHeaders(), body: '' }
   }
 
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' })
   }
 
-  const apiKey = process.env.XAI_API_KEY
+  const apiKey = (process.env.XAI_API_KEY || '').trim()
   if (!apiKey) {
-    return json(500, { error: 'XAI_API_KEY manquante sur Netlify (Environment variables)' })
+    return json(500, {
+      error:
+        'XAI_API_KEY manquante sur Netlify. Vérifie Site settings → Environment variables, puis redéploie.',
+    })
   }
 
   let body
@@ -50,52 +54,75 @@ exports.handler = async (event) => {
     return json(400, { error: 'messages requis' })
   }
 
-  const contextBlock =
+  const ctx =
     typeof context === 'string' && context.trim()
-      ? `\n\n--- CONTEXTE ALCA PROD (données actuelles) ---\n${context.slice(0, 12000)}\n--- FIN CONTEXTE ---`
+      ? context.trim().slice(0, 8000)
       : ''
+
+  const contextBlock = ctx
+    ? `\n\n--- CONTEXTE ALCA PROD (données actuelles) ---\n${ctx}\n--- FIN CONTEXTE ---`
+    : ''
 
   const xaiMessages = [
     { role: 'system', content: SYSTEM + contextBlock },
     ...messages
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .slice(-12)
-      .map((m) => ({ role: m.role, content: m.content })),
+      .slice(-10)
+      .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
   ]
 
-  try {
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'grok-4.3',
-        messages: xaiMessages,
-        temperature: 0.3,
-      }),
-    })
+  let lastError = 'Erreur xAI inconnue'
 
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const msg =
-        (typeof data.error === 'string' ? data.error : null) ||
-        data.error?.message ||
-        data.message ||
-        JSON.stringify(data).slice(0, 300) ||
-        `xAI HTTP ${res.status}`
-      return json(502, { error: msg })
+  for (const model of MODELS) {
+    try {
+      const res = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: xaiMessages,
+          temperature: 0.3,
+        }),
+      })
+
+      const raw = await res.text()
+      let data = {}
+      try {
+        data = JSON.parse(raw)
+      } catch {
+        lastError = `xAI non-JSON (${res.status}): ${raw.slice(0, 200)}`
+        continue
+      }
+
+      if (!res.ok) {
+        lastError =
+          (typeof data.error === 'string' ? data.error : null) ||
+          data.error?.message ||
+          data.message ||
+          raw.slice(0, 300) ||
+          `xAI HTTP ${res.status}`
+        // try next model
+        continue
+      }
+
+      const content = data.choices?.[0]?.message?.content || ''
+      const action = parseAction(content)
+      const options = parseOptions(content)
+      const clean = content
+        .replace(/\n?OPTIONS:\[[\s\S]*\]\s*$/m, '')
+        .replace(/\n?ACTION:\{[\s\S]*\}\s*$/m, '')
+        .trim()
+
+      return json(200, { reply: clean || '(réponse vide)', action, options, model })
+    } catch (e) {
+      lastError = e.message || String(e)
     }
-
-    const content = data.choices?.[0]?.message?.content || ''
-    const action = parseAction(content)
-    const clean = content.replace(/\n?ACTION:\{[\s\S]*\}\s*$/m, '').trim()
-
-    return json(200, { reply: clean, action })
-  } catch (e) {
-    return json(500, { error: e.message || 'Erreur assistant' })
   }
+
+  return json(502, { error: lastError })
 }
 
 function parseAction(text) {
@@ -105,6 +132,17 @@ function parseAction(text) {
     return JSON.parse(m[1])
   } catch {
     return null
+  }
+}
+
+function parseOptions(text) {
+  const m = text.match(/OPTIONS:(\[[\s\S]*\])\s*$/m)
+  if (!m) return []
+  try {
+    const arr = JSON.parse(m[1])
+    return Array.isArray(arr) ? arr.slice(0, 4) : []
+  } catch {
+    return []
   }
 }
 

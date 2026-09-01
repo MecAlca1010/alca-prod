@@ -5,6 +5,16 @@ export function isBusinessDay(date: Date): boolean {
   return day !== 0 && day !== 6 // not Sunday (0) or Saturday (6)
 }
 
+export function subtractBusinessDays(start: Date, days: number): Date {
+  const result = new Date(start)
+  let removed = 0
+  while (removed < days) {
+    result.setDate(result.getDate() - 1)
+    if (isBusinessDay(result)) removed++
+  }
+  return result
+}
+
 export function addBusinessDays(start: Date, days: number): Date {
   const result = new Date(start)
   let added = 0

@@ -70,6 +70,14 @@ export function checkManualChange(
     if (alu && changed.startDate <= alu.endDate) {
       add('warning', `Habillage commence avant la fin de l’Aluminium/Plate-forme (${changed.projectNumber}).`)
     }
+    const acierH = bySlug('acier')
+    if (acierH && changed.startDate <= acierH.endDate) {
+      add('warning', `Habillage pendant l’Acier : le camion n’est pas disponible (${changed.projectNumber}).`)
+    }
+    const peintureH = bySlug('peinture')
+    if (peintureH && changed.startDate <= peintureH.endDate) {
+      add('warning', `Habillage avant la fin de la Peinture : camion encore en baie (${changed.projectNumber}).`)
+    }
     const grue = bySlug('grue')
     if (grue && overlaps(changed.startDate, changed.endDate, grue.startDate, grue.endDate)) {
       // soft: max 1 day overlap preferred — we only warn if overlap spans clearly
@@ -133,18 +141,22 @@ export function checkManualChange(
   }
 
   if (isPolyvalente(changed.stageSlug)) {
-    const others = allStages.filter(
-      (s) =>
-        isPolyvalente(s.stageSlug) &&
-        s.projectStageId !== changed.projectStageId &&
-        s.projectId !== changed.projectId &&
-        overlaps(changed.startDate, changed.endDate, s.startDate, s.endDate)
+    const otherProjectIds = new Set(
+      allStages
+        .filter(
+          (s) =>
+            isPolyvalente(s.stageSlug) &&
+            s.projectStageId !== changed.projectStageId &&
+            s.projectId !== changed.projectId &&
+            overlaps(changed.startDate, changed.endDate, s.startDate, s.endDate)
+        )
+        .map((s) => s.projectId)
     )
-    // same project grue+habillage = 1 truck = ok; other projects count
-    if (others.length >= 2) {
+    // 1 camion = 1 projet, même s'il a Acier + Grue + Habillage qui se touchent
+    if (otherProjectIds.size >= 2) {
       add(
         'warning',
-        `Portes 5+6 saturées : trop de projets polyvalents (Acier/Grue/Habillage) en parallèle (max 2).`
+        `Portes 5+6 saturées : trop de projets polyvalents (Acier/Grue/Habillage) en parallèle (max 2 camions).`
       )
     }
   }

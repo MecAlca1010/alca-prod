@@ -13,7 +13,7 @@
  * - Aluminium-only jobs can fill jig gaps (priority still applies)
  */
 
-import { formatDate, nextBusinessDay, isBusinessDay } from './dates'
+import { formatDate, nextBusinessDay, isBusinessDay, subtractBusinessDays } from './dates'
 import type { Project, ProjectStage, Stage } from '../types/database'
 import { durationDaysForStage, hoursPerDayForStage, isoWeekKey, DEFAULT_MAX_TECHS } from './labor'
 
@@ -58,6 +58,8 @@ export interface ScheduleOptions {
   /** ISO week key -> available shop hours */
   weeklyHourCapacity?: Record<string, number>
   defaultWeeklyHours?: number
+  /** projectStageId -> forced start YYYY-MM-DD */
+  pins?: Record<string, string>
 }
 
 const DEFAULT_CAPACITY: Record<ResourceId, number> = {
@@ -276,6 +278,11 @@ export function scheduleProjects(
     const placed: Record<string, { start: Date; end: Date }> = {}
 
     const placeOne = (ps: PS & { stage: Stage }, notBefore: Date): boolean => {
+      const pin = options.pins?.[ps.id]
+      if (pin) {
+        const pinnedDate = new Date(pin + 'T00:00:00')
+        if (pinnedDate > notBefore) notBefore = pinnedDate
+      }
       const stage = ps.stage
       const laborH = laborByProject[project.id]?.[stage.slug] || 0
       const mt = maxTechs[stage.slug] ?? 1
@@ -336,9 +343,51 @@ export function scheduleProjects(
       placeOne(bySlug.peinture, after)
     }
 
-    // 3) Aluminium on jig — can start from globalCursor (parallel), try early to finish near paint exit
+    // 3) Aluminium on jig — finish near paint (or acier) exit so the jig is not blocked for days
     if (bySlug.aluminium) {
-      placeOne(bySlug.aluminium, new Date(globalCursor))
+      const targetEnd = placed.peinture?.end || placed.acier?.end
+      if (targetEnd) {
+        const ps = bySlug.aluminium
+        const laborH = laborByProject[project.id]?.aluminium || 0
+        const mt = maxTechs.aluminium ?? 1
+        const duration = durationDaysForStage({
+          slug: 'aluminium',
+          defaultDays: ps.stage.default_duration_days || 1,
+          laborHours: laborH,
+          maxTechs: mt,
+        })
+        const hpd = hoursPerDayForStage('aluminium', laborH, mt, duration)
+        const resource = resourceForSlug('aluminium')
+        const capacity = capacities[resource]
+        const idealStart = subtractBusinessDays(targetEnd, Math.max(0, duration - 1))
+        let best: Date | null = null
+        let bestScore = 1e9
+        let tryStart = subtractBusinessDays(idealStart, 3)
+        if (tryStart < globalCursor) tryStart = new Date(globalCursor)
+        for (let a = 0; a < 30; a++) {
+          if (
+            canPlace(occupancy, tryStart, duration, resource, capacity, blocks) &&
+            weekHoursOk(tryStart, duration, hpd, weekUsed, weeklyCap, defaultWeekly)
+          ) {
+            const tryEnd = endOfStage(tryStart, duration)
+            const score = Math.abs(tryEnd.getTime() - targetEnd.getTime())
+            const earlyPenalty = tryEnd < targetEnd ? (targetEnd.getTime() - tryEnd.getTime()) / 86400000 : 0
+            const s = score + earlyPenalty * 0.3 * 86400000
+            if (s < bestScore) {
+              bestScore = s
+              best = new Date(tryStart)
+            }
+          }
+          tryStart = nextBusinessDay(tryStart)
+        }
+        if (best) {
+          placeOne(bySlug.aluminium, best)
+        } else {
+          placeOne(bySlug.aluminium, new Date(idealStart < globalCursor ? globalCursor : idealStart))
+        }
+      } else {
+        placeOne(bySlug.aluminium, new Date(globalCursor))
+      }
     }
 
     // 4) Grue after peinture (or after acier/global)
@@ -353,6 +402,8 @@ export function scheduleProjects(
     if (bySlug.habillage) {
       let after = new Date(globalCursor)
       if (placed.aluminium) after = nextBusinessDay(placed.aluminium.end)
+      if (placed.acier && nextBusinessDay(placed.acier.end) > after) after = nextBusinessDay(placed.acier.end)
+      if (placed.peinture && nextBusinessDay(placed.peinture.end) > after) after = nextBusinessDay(placed.peinture.end)
 
       // If grue exists, ensure overlap ≤ maxGHOverlap
       if (placed.grue) {
