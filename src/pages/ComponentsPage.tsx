@@ -37,6 +37,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showLaborImport, setShowLaborImport] = useState(false)
+  const [catalogQuery, setCatalogQuery] = useState('')
 
   const load = async () => {
     const [c, s, ci] = await Promise.all([
@@ -320,6 +321,15 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
         <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</div>
       )}
 
+      <input
+        type="search"
+        value={catalogQuery}
+        onChange={(e) => setCatalogQuery(e.target.value)}
+        placeholder={tab === 'subs' ? 'Rechercher un sous-composant…' : 'Rechercher un composant…'}
+        className="w-full border rounded-lg px-3 py-2 text-sm"
+      />
+
+
       {/* SUB-COMPONENTS */}
       {tab === 'subs' && (
         <div className="space-y-4">
@@ -332,7 +342,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             </button>
           )}
 
-          {showSubForm && (
+          {showSubForm && !editingSubId && (
             <div className="bg-white border rounded-xl p-4 space-y-3">
               <h3 className="font-black text-sm">
                 {editingSubId ? 'Modifier le sous-composant' : 'Nouveau sous-composant'}
@@ -363,8 +373,15 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             {subComponents.length === 0 ? (
               <p className="p-6 text-center text-gray-400 text-sm">Aucun sous-composant</p>
             ) : (
-              subComponents.map((s) => (
-                <div key={s.id} className="flex items-center justify-between px-4 py-3 gap-3">
+              subComponents
+                .filter((s) => {
+                  const q = catalogQuery.trim().toLowerCase()
+                  if (!q) return true
+                  return s.part_number.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)
+                })
+                .map((s) => (
+                <div key={s.id}>
+                <div className="flex items-center justify-between px-4 py-3 gap-3">
                   <button type="button" onClick={() => openEditSub(s)} className="min-w-0 text-left flex-1 hover:opacity-80">
                     <div className="font-medium text-sm">{s.part_number}</div>
                     <div className="text-xs text-gray-500 truncate">{s.description}</div>
@@ -373,6 +390,30 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                     <button onClick={() => openEditSub(s)} className="text-xs text-gray-500 hover:text-black">Modifier</button>
                     <button onClick={() => deleteSub(s.id)} className="text-red-500 text-xs hover:underline">Supprimer</button>
                   </div>
+                </div>
+                {editingSubId === s.id && showSubForm && (
+                  <div className="bg-yellow-50 border-t px-4 py-3 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Numéro de pièce</label>
+                        <input value={subPart} onChange={(e) => setSubPart(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Description</label>
+                        <input value={subDesc} onChange={(e) => setSubDesc(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={resetSubForm} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
+                      <button onClick={saveSub} disabled={saving}
+                        className="bg-alca-yellow font-black px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+                        {saving ? '...' : 'Enregistrer'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 </div>
               ))
             )}
@@ -392,7 +433,7 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             </button>
           )}
 
-          {showCompForm && (
+          {showCompForm && !editingCompId && (
             <div className="bg-white border rounded-xl p-4 space-y-3">
               <h3 className="font-black text-sm">
                 {editingCompId ? 'Modifier le composant' : 'Nouveau composant'}
@@ -512,7 +553,18 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
             {components.length === 0 ? (
               <p className="p-6 text-center text-gray-400 text-sm">Aucun composant</p>
             ) : (
-              components.map((c) => {
+              components
+                .filter((c) => {
+                  const q = catalogQuery.trim().toLowerCase()
+                  if (!q) return true
+                  return (
+                    c.part_number.toLowerCase().includes(q) ||
+                    (c.description || '').toLowerCase().includes(q) ||
+                    (c.stage_slug || '').toLowerCase().includes(q)
+                  )
+                })
+                .map((c) => {
+
                 const items = itemsFor(c.id)
                 const open = expandedId === c.id
                 return (
@@ -551,6 +603,39 @@ export default function ComponentsPage({ isAdmin }: ComponentsPageProps) {
                             <span className="font-medium">× {Number(ci.quantity)}</span>
                           </div>
                         ))}
+                      </div>
+                    )}
+                    {editingCompId === c.id && showCompForm && (
+                      <div className="bg-yellow-50 border-t px-4 py-3 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-gray-500">Numéro de pièce</label>
+                            <input value={compPart} onChange={(e) => setCompPart(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500">Description</label>
+                            <input value={compDesc} onChange={(e) => setCompDesc(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500">Étape</label>
+                            <select value={compStage} onChange={(e) => setCompStage(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+                              <option value="">— Aucune —</option>
+                              {STAGE_OPTIONS.map((s) => (
+                                <option key={s.slug} value={s.slug}>{s.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500">Main d'œuvre (h)</label>
+                            <input type="number" min={0} step={0.25} value={compHours} onChange={(e) => setCompHours(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={resetCompForm} className="border px-4 py-2 rounded-lg text-sm">Annuler</button>
+                          <button onClick={saveComp} disabled={saving} className="bg-alca-yellow font-black px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+                            {saving ? '...' : 'Enregistrer'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -41,6 +41,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [resourceBlocks, setResourceBlocks] = useState<{ start_date: string; end_date: string; reason?: string | null }[]>([])
+  const [materialOpen, setMaterialOpen] = useState(false)
 
   // Confirmation modal state
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -548,16 +549,30 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-black">Prévision de matériel</h2>
-          {isAdmin && (
-            <Link to="/composants" className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50">
-              Gérer le catalogue
-            </Link>
-          )}
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Link to="/composants" className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50">
+                Gérer le catalogue
+              </Link>
+            )}
+            {materialLines.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setMaterialOpen((o) => !o)}
+                className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                title={materialOpen ? 'Cacher la liste' : 'Afficher la liste'}
+              >
+                {materialOpen ? '▲' : '▼'}
+              </button>
+            )}
+          </div>
         </div>
         {materialLines.length === 0 ? (
           <p className="text-gray-400 text-sm">
             Aucun matériel à prévoir. Ajoutez des composants aux projets pour voir la consolidation ici.
           </p>
+        ) : !materialOpen ? (
+          <p className="text-xs text-gray-400">{materialLines.length} lignes — clique la flèche pour afficher.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -576,10 +591,10 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
                   <tr key={line.part_number} className="border-b border-gray-50">
                     <td className="py-2 pr-3 font-medium whitespace-nowrap">{line.part_number}</td>
                     <td className="py-2 pr-3 text-gray-600">{line.description}</td>
-                    <td className="py-2 px-2 text-right tabular-nums">{line.en_production || '—'}</td>
-                    <td className="py-2 px-2 text-right tabular-nums">{line.a_preparer || '—'}</td>
-                    <td className="py-2 px-2 text-right tabular-nums">{line.a_venir || '—'}</td>
-                    <td className="py-2 pl-2 text-right font-black tabular-nums">{line.total_quantity}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.en_production ? Number(line.en_production).toFixed(1).replace('.', ',') : '—'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.a_preparer ? Number(line.a_preparer).toFixed(1).replace('.', ',') : '—'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{line.a_venir ? Number(line.a_venir).toFixed(1).replace('.', ',') : '—'}</td>
+                    <td className="py-2 pl-2 text-right font-black tabular-nums">{Number(line.total_quantity).toFixed(1).replace('.', ',')}</td>
                   </tr>
                 ))}
               </tbody>
