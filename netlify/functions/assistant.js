@@ -23,9 +23,9 @@ Types d'actions:
 Après choix humain, le client applique. Une petite action unique peut encore utiliser:
 ACTION:{"type":"block_porte_8",...}`
 
-const MODELS = ['grok-4.3', 'grok-4.5', 'grok-4.6']
+const MODELS = ['grok-4.3', 'grok-4', 'grok-4.5', 'grok-4.6']
 
-exports.handler = async (event) => {
+export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: corsHeaders(), body: '' }
   }

@@ -268,9 +268,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     setIsOptimizing(false)
   }
 
-  const handleReoptimize = () => {
+  const handleReoptimize = async () => {
     if (projects.length === 0) return
-    runSchedule(projects, projectStages, stages)
+    const { data } = await supabase.from('projects').select('*').order('priority_order', { ascending: true })
+    const fresh = (data || []).filter((p: Project) => !p.is_closed)
+    if (fresh.length) setProjects(fresh)
+    await runSchedule(fresh.length ? fresh : projects, projectStages, stages)
   }
 
   const handleStageDatesChange = async (stage: ScheduledStage) => {
@@ -322,17 +325,19 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
 
   // --- Drag & drop with confirmation ---
   const saveNewOrder = async (newProjects: Project[]) => {
-    if (savingOrder.current) return
+    if (savingOrder.current) return newProjects
     savingOrder.current = true
-
-    const updates = newProjects.map((p, index) =>
-      supabase
-        .from('projects')
-        .update({ priority_order: (index + 1) * 10 })
-        .eq('id', p.id)
+    const withOrder = newProjects.map((p, index) => ({
+      ...p,
+      priority_order: (index + 1) * 10,
+    }))
+    await Promise.all(
+      withOrder.map((p) =>
+        supabase.from('projects').update({ priority_order: p.priority_order }).eq('id', p.id)
+      )
     )
-    await Promise.all(updates)
     savingOrder.current = false
+    return withOrder
   }
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -388,9 +393,9 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     // For durations save we pass current projects and just reoptimize
     const orderChanged = pendingProjects.some((p, i) => projects[i]?.id !== p.id)
     if (orderChanged) {
-      setProjects(pendingProjects)
-      await saveNewOrder(pendingProjects)
-      await runSchedule(pendingProjects, projectStages, stages)
+      const withOrder = await saveNewOrder(pendingProjects)
+      setProjects(withOrder)
+      await runSchedule(withOrder, projectStages, stages)
     } else {
       // durations change → just reoptimize with current order
       await runSchedule(projects, projectStages, stages)
