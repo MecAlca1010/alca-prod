@@ -117,9 +117,41 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const toggleStageCompleted = async (ps: ProjectStage & { stage: Stage }) => {
     if (!isAdmin) return
     const newValue = !ps.is_completed
-    const { error } = await supabase.from('project_stages').update({ is_completed: newValue }).eq('id', ps.id)
-    if (!error) {
-      setProjectStages((prev) => prev.map((s) => (s.id === ps.id ? { ...s, is_completed: newValue } : s)))
+    const today = new Date()
+    const todayStr = today.toISOString().slice(0, 10)
+    if (newValue) {
+      if (!confirm(`Terminer « ${ps.stage?.name} » ? L’étape sera barrée et les suivantes du projet avanceront.`)) return
+      const start = ps.start_date && ps.start_date < todayStr ? ps.start_date : todayStr
+      await supabase
+        .from('project_stages')
+        .update({
+          is_completed: true,
+          is_pinned: true,
+          end_date: todayStr,
+          start_date: start,
+        })
+        .eq('id', ps.id)
+      const later = projectStages.filter(
+        (s) => s.stage && ps.stage && s.stage.sort_order > ps.stage.sort_order
+      )
+      for (const s of later) {
+        await supabase.from('project_stages').update({ is_pinned: false }).eq('id', s.id)
+      }
+      setProjectStages((prev) =>
+        prev.map((s) =>
+          s.id === ps.id
+            ? { ...s, is_completed: true, start_date: start, end_date: todayStr }
+            : s.stage && ps.stage && s.stage.sort_order > ps.stage.sort_order
+              ? { ...s, is_pinned: false }
+              : s
+        )
+      )
+      window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+    } else {
+      if (!confirm(`Réouvrir « ${ps.stage?.name} » ?`)) return
+      await supabase.from('project_stages').update({ is_completed: false, is_pinned: false }).eq('id', ps.id)
+      setProjectStages((prev) => prev.map((s) => (s.id === ps.id ? { ...s, is_completed: false } : s)))
+      window.dispatchEvent(new CustomEvent('alca-reoptimize'))
     }
   }
 

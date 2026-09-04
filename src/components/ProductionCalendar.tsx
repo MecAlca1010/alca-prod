@@ -26,6 +26,7 @@ interface ProductionCalendarProps {
   scheduledStages: ScheduledStage[]
   isAdmin: boolean
   onReoptimize?: () => void
+  onForceReoptimize?: () => void
   isOptimizing?: boolean
   onStageDatesChange?: (stage: ScheduledStage) => Promise<void>
   resourceBlocks?: ResourceBlockBar[]
@@ -37,6 +38,7 @@ export default function ProductionCalendar({
   scheduledStages,
   isAdmin,
   onReoptimize,
+  onForceReoptimize,
   isOptimizing,
   onStageDatesChange,
   resourceBlocks = [],
@@ -332,6 +334,16 @@ export default function ProductionCalendar({
               className="px-3 py-1 bg-alca-yellow text-alca-black font-black rounded text-sm hover:brightness-110 disabled:opacity-50"
             >
               {isOptimizing ? 'Optimisation...' : 'Réoptimiser'}
+            </button>
+          )}
+          {isAdmin && onForceReoptimize && (
+            <button
+              onClick={onForceReoptimize}
+              disabled={isOptimizing}
+              className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+              title="Ignore les déplacements manuels"
+            >
+              Réoptimiser tout
             </button>
           )}
         </div>

@@ -222,9 +222,15 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         (offRes.data || []) as any
       )
 
-      const pins: Record<string, string> = {}
+      const pins: Record<string, { start: string; end: string; duration?: number }> = {}
       for (const ps of pStages as any[]) {
-        if (ps.is_pinned && ps.start_date) pins[ps.id] = ps.start_date
+        if (ps.is_pinned && ps.start_date && ps.end_date) {
+          pins[ps.id] = {
+            start: ps.start_date,
+            end: ps.end_date,
+            duration: ps.duration_days || undefined,
+          }
+        }
       }
 
       const result = scheduleProjects(projs, pStages, stgs, {
@@ -268,12 +274,21 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     setIsOptimizing(false)
   }
 
-  const handleReoptimize = async () => {
+  const handleReoptimize = async (force = false) => {
     if (projects.length === 0) return
+    if (force) {
+      if (!confirm('Réoptimiser TOUT le calendrier ? Les déplacements manuels et épingles seront perdus.')) return
+      await supabase.from('project_stages').update({ is_pinned: false })
+      const { data: ps } = await supabase.from('project_stages').select('*, stage:stages(*)')
+      if (ps) setProjectStages(ps as any)
+    }
     const { data } = await supabase.from('projects').select('*').order('priority_order', { ascending: true })
     const fresh = (data || []).filter((p: Project) => !p.is_closed)
     if (fresh.length) setProjects(fresh)
-    await runSchedule(fresh.length ? fresh : projects, projectStages, stages)
+    const { data: pStagesFresh } = await supabase.from('project_stages').select('*, stage:stages(*)')
+    const stagesUse = (pStagesFresh || projectStages) as any
+    if (pStagesFresh) setProjectStages(stagesUse)
+    await runSchedule(fresh.length ? fresh : projects, stagesUse, stages)
   }
 
   const handleStageDatesChange = async (stage: ScheduledStage) => {
@@ -284,6 +299,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         start_date: stage.startDate,
         end_date: stage.endDate,
         duration_days: stage.durationDays,
+        is_pinned: true,
       })
       .eq('id', stage.projectStageId)
 
@@ -468,7 +484,8 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
           <ProductionCalendar
             scheduledStages={scheduledStages}
             isAdmin={isAdmin}
-            onReoptimize={handleReoptimize}
+            onReoptimize={() => handleReoptimize(false)}
+            onForceReoptimize={() => handleReoptimize(true)}
             isOptimizing={isOptimizing}
             onStageDatesChange={handleStageDatesChange}
             resourceBlocks={resourceBlocks}

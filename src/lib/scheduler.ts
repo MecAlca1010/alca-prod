@@ -58,8 +58,8 @@ export interface ScheduleOptions {
   /** ISO week key -> available shop hours */
   weeklyHourCapacity?: Record<string, number>
   defaultWeeklyHours?: number
-  /** projectStageId -> forced start YYYY-MM-DD */
-  pins?: Record<string, string>
+  /** projectStageId -> forced window */
+  pins?: Record<string, { start: string; end: string; duration?: number }>
 }
 
 const DEFAULT_CAPACITY: Record<ResourceId, number> = {
@@ -277,12 +277,42 @@ export function scheduleProjects(
 
     const placed: Record<string, { start: Date; end: Date }> = {}
 
-    const placeOne = (ps: PS & { stage: Stage }, notBefore: Date): boolean => {
+    const placePinnedExact = (ps: PS & { stage: Stage }): boolean => {
       const pin = options.pins?.[ps.id]
-      if (pin) {
-        const pinnedDate = new Date(pin + 'T00:00:00')
-        if (pinnedDate > notBefore) notBefore = pinnedDate
-      }
+      if (!pin?.start || !pin?.end) return false
+      const stage = ps.stage
+      const start = new Date(pin.start + 'T00:00:00')
+      const end = new Date(pin.end + 'T00:00:00')
+      const duration = pin.duration || ps.duration_days || stage.default_duration_days || 1
+      const resource = resourceForSlug(stage.slug)
+      occupy(occupancy, start, duration, resource)
+      const laborH = laborByProject[project.id]?.[stage.slug] || 0
+      const mt = maxTechs[stage.slug] ?? 1
+      const hpd = hoursPerDayForStage(stage.slug, laborH, mt, duration)
+      occupyWeekHours(start, duration, hpd, weekUsed)
+      placed[stage.slug] = { start, end }
+      result.push({
+        projectStageId: ps.id,
+        projectId: project.id,
+        stageId: stage.id,
+        projectNumber: project.project_number,
+        clientName: project.client_name,
+        stageName: stage.name,
+        stageSlug: stage.slug,
+        color: stage.color,
+        startDate: pin.start,
+        endDate: pin.end,
+        durationDays: duration,
+        isCompleted: ps.is_completed,
+        sortOrder: stage.sort_order,
+        resourceId: resource,
+      })
+      return true
+    }
+
+    const placeOne = (ps: PS & { stage: Stage }, notBefore: Date): boolean => {
+      if (placed[ps.stage.slug]) return true
+      if (options.pins?.[ps.id] && placePinnedExact(ps)) return true
       const stage = ps.stage
       const laborH = laborByProject[project.id]?.[stage.slug] || 0
       const mt = maxTechs[stage.slug] ?? 1
@@ -330,6 +360,10 @@ export function scheduleProjects(
         resourceId: resource,
       })
       return true
+    }
+
+    for (const ps of Object.values(bySlug)) {
+      if (options.pins?.[ps.id]) placePinnedExact(ps)
     }
 
     // 1) Acier
@@ -399,7 +433,7 @@ export function scheduleProjects(
     }
 
     // 5) Habillage after aluminium end; respect max overlap with grue
-    if (bySlug.habillage) {
+    if (bySlug.habillage && !placed.habillage) {
       let after = new Date(globalCursor)
       if (placed.aluminium) after = nextBusinessDay(placed.aluminium.end)
       if (placed.acier && nextBusinessDay(placed.acier.end) > after) after = nextBusinessDay(placed.acier.end)

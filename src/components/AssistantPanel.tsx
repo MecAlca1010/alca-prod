@@ -134,9 +134,30 @@ export default function AssistantPanel({ open, onClose, isAdmin }: AssistantPane
           if (!proj) throw new Error(`Projet ${act.project_number} introuvable`)
           const { data: st } = await supabase.from('stages').select('id').eq('slug', act.stage_slug).maybeSingle()
           if (!st) throw new Error(`Étape ${act.stage_slug} introuvable`)
+          const { data: ps } = await supabase
+            .from('project_stages')
+            .select('id, duration_days')
+            .eq('project_id', proj.id)
+            .eq('stage_id', st.id)
+            .maybeSingle()
+          const days = Math.max(1, ps?.duration_days || 1)
+          const start = new Date(act.start_date + 'T00:00:00')
+          let end = new Date(start)
+          let added = 1
+          while (added < days) {
+            end.setDate(end.getDate() + 1)
+            const d = end.getDay()
+            if (d !== 0 && d !== 6) added++
+          }
+          const endStr = end.toISOString().slice(0, 10)
           const { error } = await supabase
             .from('project_stages')
-            .update({ start_date: act.start_date, is_pinned: true })
+            .update({
+              start_date: act.start_date,
+              end_date: act.end_date || endStr,
+              duration_days: days,
+              is_pinned: true,
+            })
             .eq('project_id', proj.id)
             .eq('stage_id', st.id)
           if (error) throw error
