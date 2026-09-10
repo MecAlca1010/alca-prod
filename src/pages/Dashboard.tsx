@@ -42,6 +42,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [resourceBlocks, setResourceBlocks] = useState<{ start_date: string; end_date: string; reason?: string | null }[]>([])
   const [materialOpen, setMaterialOpen] = useState(false)
+  const [projectQuery, setProjectQuery] = useState('')
 
   // Confirmation modal state
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -278,7 +279,11 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     if (projects.length === 0) return
     if (force) {
       if (!confirm('Réoptimiser TOUT le calendrier ? Les déplacements manuels et épingles seront perdus.')) return
-      await supabase.from('project_stages').update({ is_pinned: false })
+      const { data: allPs } = await supabase.from('project_stages').select('id')
+      const ids = (allPs || []).map((r: { id: string }) => r.id)
+      if (ids.length) {
+        await supabase.from('project_stages').update({ is_pinned: false }).in('id', ids)
+      }
       const { data: ps } = await supabase.from('project_stages').select('*, stage:stages(*)')
       if (ps) setProjectStages(ps as any)
     }
@@ -510,6 +515,13 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
               <span className="text-xs text-gray-400">Glisser pour réordonner</span>
             )}
           </div>
+          <input
+            type="search"
+            value={projectQuery}
+            onChange={(e) => setProjectQuery(e.target.value)}
+            placeholder="Rechercher (n°, client, VIN, série…)"
+            className="w-full border rounded-lg px-3 py-1.5 text-sm mb-3"
+          />
 
           {projects.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">
@@ -517,7 +529,23 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             </div>
           ) : (
             <div className="space-y-1.5">
-              {projects.map((project) => {
+              {projects.filter((project) => {
+                const q = projectQuery.trim().toLowerCase()
+                if (!q) return true
+                const blob = [
+                  project.project_number,
+                  project.client_name,
+                  project.description,
+                  project.vin,
+                  project.serial_number,
+                  project.hiab_model,
+                  project.truck_model,
+                  project.contact_name,
+                  project.contact_email,
+                  project.contact_phone,
+                ].join(' ').toLowerCase()
+                return blob.includes(q)
+              }).map((project) => {
                 const status = statusLabels[project.status] || statusLabels.a_venir
                 const isDragging = draggedId === project.id
                 const isDragOver = dragOverId === project.id
@@ -545,6 +573,24 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
                       </div>
                     )}
 
+                    {isAdmin && (
+                      <label className="flex items-center gap-1 text-[10px] text-gray-500 shrink-0" title="Ajouter au calendrier">
+                        <input
+                          type="checkbox"
+                          checked={project.on_calendar !== false}
+                          onChange={async (e) => {
+                            e.stopPropagation()
+                            const on = e.target.checked
+                            await supabase.from('projects').update({ on_calendar: on }).eq('id', project.id)
+                            const next = projects.map((p) => (p.id === project.id ? { ...p, on_calendar: on } : p))
+                            setProjects(next)
+                            await runSchedule(next, projectStages, stages)
+                          }}
+                          className="accent-alca-yellow"
+                        />
+                        Cal.
+                      </label>
+                    )}
                     <Link
                       to={`/projet/${project.id}`}
                       className="flex-1 min-w-0"

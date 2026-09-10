@@ -36,6 +36,10 @@ export function checkManualChange(
     violations.push({ severity, message })
   }
 
+  if (changed.projectStatus && changed.projectStatus !== 'en_cours') {
+    return violations
+  }
+
   if (changed.startDate > changed.endDate) {
     add('error', 'La date de début est après la date de fin.')
     return violations

@@ -23,6 +23,14 @@ export interface Project {
   estimated_delivery_date: string | null
   is_closed?: boolean
   closed_at?: string | null
+  truck_model?: string | null
+  truck_received_date?: string | null
+  equipment_received_date?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  on_calendar?: boolean
+  accessories?: Record<string, { received?: boolean; date?: string; sn?: string }>
   created_at: string
   updated_at: string
 }

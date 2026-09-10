@@ -82,7 +82,8 @@ export default function AddProjectModal({ onClose, onCreated }: AddProjectModalP
         serial_number: serialNumber.trim() || null,
         vin: vin.trim() || null,
         status: 'a_venir',
-        priority_order: 1000, // will be adjusted later
+        priority_order: 1000,
+        on_calendar: false,
       })
       .select()
       .single()

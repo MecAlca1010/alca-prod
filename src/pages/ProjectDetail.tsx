@@ -33,6 +33,14 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   const [hiabModels, setHiabModels] = useState<HiabModel[]>([])
   const [serialNumber, setSerialNumber] = useState('')
   const [vin, setVin] = useState('')
+  const [truckModel, setTruckModel] = useState('')
+  const [truckReceived, setTruckReceived] = useState('')
+  const [equipReceived, setEquipReceived] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [accessories, setAccessories] = useState<Record<string, { received?: boolean; date?: string; sn?: string }>>({})
+  const [showAcc, setShowAcc] = useState(false)
   const [status, setStatus] = useState<ProjectStatus>('a_venir')
   const [sharepointUrl, setSharepointUrl] = useState('')
   const [editingSharepoint, setEditingSharepoint] = useState(false)
@@ -72,6 +80,13 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
     if (models) setHiabModels(models)
     setSerialNumber(p.serial_number || '')
     setVin(p.vin || '')
+    setTruckModel(p.truck_model || '')
+    setTruckReceived(p.truck_received_date || '')
+    setEquipReceived(p.equipment_received_date || '')
+    setContactName(p.contact_name || '')
+    setContactEmail(p.contact_email || '')
+    setContactPhone(p.contact_phone || '')
+    setAccessories(p.accessories || {})
     setStatus(p.status)
     setSharepointUrl(p.sharepoint_url || '')
 
@@ -99,6 +114,13 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
       hiab_model: hiabModel.trim() || null,
       serial_number: serialNumber.trim() || null,
       vin: vin.trim() || null,
+      truck_model: truckModel.trim() || null,
+      truck_received_date: truckReceived || null,
+      equipment_received_date: equipReceived || null,
+      contact_name: contactName.trim() || null,
+      contact_email: contactEmail.trim() || null,
+      contact_phone: contactPhone.trim() || null,
+      accessories,
       status,
       sharepoint_url: sharepointUrl.trim() || null,
     }).eq('id', project.id)
@@ -348,42 +370,121 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
               ) : <p>{project.description || '—'}</p>}
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Modèle Hiab</label>
+              <label className="block text-xs text-gray-500 mb-1">Contact — nom</label>
               {isAdmin ? (
-                <select
-                  value={hiabModel}
-                  onChange={(e) => setHiabModel(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow"
-                >
-                  <option value="">— Sélectionner —</option>
-                  {hiabModels.map((m) => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
-                  ))}
-                  {hiabModel && !hiabModels.some((m) => m.name === hiabModel) && (
-                    <option value={hiabModel}>{hiabModel} (hors catalogue)</option>
-                  )}
-                </select>
-              ) : <p>{project.hiab_model || '—'}</p>}
+                <input value={contactName} onChange={(e) => setContactName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow" />
+              ) : <p>{project.contact_name || '—'}</p>}
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Numéro de série</label>
+              <label className="block text-xs text-gray-500 mb-1">Contact — courriel</label>
               {isAdmin ? (
-                <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)}
+                <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow" />
-              ) : <p>{project.serial_number || '—'}</p>}
+              ) : <p>{project.contact_email || '—'}</p>}
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">VIN</label>
+              <label className="block text-xs text-gray-500 mb-1">Contact — téléphone</label>
               {isAdmin ? (
-                <input value={vin} onChange={(e) => setVin(e.target.value)}
+                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-alca-yellow" />
-              ) : <p>{project.vin || '—'}</p>}
+              ) : <p>{project.contact_phone || '—'}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date de livraison estimée</label>
               <p className="text-gray-400 text-sm">{project.estimated_delivery_date || 'Sera calculée par le planificateur'}</p>
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-lg font-black mb-4">Camion</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Modèle du camion</label>
+              {isAdmin ? <input value={truckModel} onChange={(e) => setTruckModel(e.target.value)} className="w-full border rounded-lg px-3 py-2" /> : <p>{project.truck_model || '—'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">VIN</label>
+              {isAdmin ? <input value={vin} onChange={(e) => setVin(e.target.value)} className="w-full border rounded-lg px-3 py-2" /> : <p>{project.vin || '—'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date de réception</label>
+              {isAdmin ? <input type="date" value={truckReceived} onChange={(e) => setTruckReceived(e.target.value)} className="w-full border rounded-lg px-3 py-2" /> : <p>{project.truck_received_date || '—'}</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-lg font-black mb-4">Équipement</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Modèle</label>
+              {isAdmin ? (
+                <select value={hiabModel} onChange={(e) => setHiabModel(e.target.value)} className="w-full border rounded-lg px-3 py-2">
+                  <option value="">— Sélectionner —</option>
+                  {hiabModels.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  {hiabModel && !hiabModels.some((m) => m.name === hiabModel) && <option value={hiabModel}>{hiabModel}</option>}
+                </select>
+              ) : <p>{project.hiab_model || '—'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">N° de série</label>
+              {isAdmin ? <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="w-full border rounded-lg px-3 py-2" /> : <p>{project.serial_number || '—'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date de réception</label>
+              {isAdmin ? <input type="date" value={equipReceived} onChange={(e) => setEquipReceived(e.target.value)} className="w-full border rounded-lg px-3 py-2" /> : <p>{project.equipment_received_date || '—'}</p>}
+            </div>
+          </div>
+          <button type="button" onClick={() => setShowAcc((v) => !v)} className="mt-4 text-sm text-gray-600 hover:text-black">
+            {showAcc ? '▼' : '▶'} Accessoires
+          </button>
+          {showAcc && (
+            <div className="mt-3 space-y-2">
+              {[
+                { key: 'pompe', label: 'Pompe', sn: true },
+                { key: 'pto', label: 'PTO', sn: false },
+                { key: 'convertisseur', label: 'Convertisseur', sn: false },
+                { key: 'reservoir', label: 'Réservoir', sn: false },
+                { key: 'manette', label: 'Manette', sn: false },
+                { key: 'fourche', label: 'Fourche', sn: true },
+                { key: 'pad', label: 'Pad anticalle', sn: false },
+              ].map((row) => {
+                const a = accessories[row.key] || {}
+                return (
+                  <div key={row.key} className={`flex flex-wrap items-center gap-2 text-sm p-2 rounded-lg ${a.received ? 'bg-green-50' : 'bg-gray-50'}`}>
+                    <label className="flex items-center gap-2 min-w-[140px]">
+                      <input
+                        type="checkbox"
+                        checked={!!a.received}
+                        disabled={!isAdmin}
+                        onChange={(e) => setAccessories((prev) => ({ ...prev, [row.key]: { ...a, received: e.target.checked } }))}
+                        className="accent-green-600"
+                      />
+                      {row.label}
+                    </label>
+                    {row.sn && (
+                      <input
+                        placeholder="S/N"
+                        disabled={!isAdmin}
+                        value={a.sn || ''}
+                        onChange={(e) => setAccessories((prev) => ({ ...prev, [row.key]: { ...a, sn: e.target.value } }))}
+                        className="w-28 border rounded px-2 py-1 text-xs"
+                      />
+                    )}
+                    <input
+                      type="date"
+                      disabled={!isAdmin}
+                      value={a.date || ''}
+                      onChange={(e) => setAccessories((prev) => ({ ...prev, [row.key]: { ...a, date: e.target.value } }))}
+                      className="border rounded px-2 py-1 text-xs"
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">

@@ -214,6 +214,7 @@ export default function ProductionCalendar({
     if (!dragMode || !dragStageId) return
 
     const onMove = (e: PointerEvent) => {
+      try {
       if (!dragOrigin.current) return
       const dx = e.clientX - dragOrigin.current.x
       // ~ one day column ≈ measured; fallback 70px
@@ -279,9 +280,13 @@ export default function ProductionCalendar({
           }
         })
       )
+      } catch (err) {
+        console.error('calendar drag move', err)
+      }
     }
 
     const onUp = () => {
+      try {
       const stage = localStages.find((s) => s.projectStageId === dragStageId)
       // Use functional update to get latest
       setLocalStages((current) => {
@@ -299,6 +304,10 @@ export default function ProductionCalendar({
         }
         return current
       })
+      } catch (err) {
+        console.error('calendar drag up', err)
+        setLocalStages(scheduledStages.map((s) => ({ ...s })))
+      }
       setDragMode(null)
       setDragStageId(null)
       dragOrigin.current = null

@@ -250,6 +250,7 @@ export function scheduleProjects(
 
   const sortedProjects = [...projects]
     .filter((p) => !(p as Project & { is_closed?: boolean }).is_closed)
+    .filter((p) => p.on_calendar !== false)
     .sort((a, b) => a.priority_order - b.priority_order)
   const occupancy: Occupancy = {}
   const result: ScheduledStage[] = []
@@ -306,6 +307,7 @@ export function scheduleProjects(
         isCompleted: ps.is_completed,
         sortOrder: stage.sort_order,
         resourceId: resource,
+        projectStatus: project.status,
       })
       return true
     }
@@ -358,6 +360,7 @@ export function scheduleProjects(
         isCompleted: ps.is_completed,
         sortOrder: stage.sort_order,
         resourceId: resource,
+        projectStatus: project.status,
       })
       return true
     }
@@ -480,6 +483,7 @@ export function scheduleProjects(
                 isCompleted: bySlug.habillage.is_completed,
                 sortOrder: bySlug.habillage.stage.sort_order,
                 resourceId: resource,
+                projectStatus: project.status,
               })
               ok = true
               break
