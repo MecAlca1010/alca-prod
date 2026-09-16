@@ -51,6 +51,25 @@ export function checkManualChange(
 
   const bySlug = (slug: string) => sameProject.find((s) => s.stageSlug === slug)
 
+  if (changed.stageSlug === 'pto') {
+    const acier = bySlug('acier')
+    const peinture = bySlug('peinture')
+    const grue = bySlug('grue')
+    const hab = bySlug('habillage')
+    if (acier && overlaps(changed.startDate, changed.endDate, acier.startDate, acier.endDate)) {
+      add('warning', `PTO chevauche Acier du même projet (${changed.projectNumber}).`)
+    }
+    if (peinture && overlaps(changed.startDate, changed.endDate, peinture.startDate, peinture.endDate)) {
+      add('warning', `PTO chevauche Peinture du même projet (${changed.projectNumber}).`)
+    }
+    if (grue && changed.startDate >= grue.startDate) {
+      add('warning', `PTO après le début de la Grue (${changed.projectNumber}) — PTO doit précéder grue/habillage.`)
+    }
+    if (hab && changed.startDate >= hab.startDate) {
+      add('warning', `PTO après le début de l’Habillage (${changed.projectNumber}).`)
+    }
+  }
+
   // --- Same-project dependencies ---
   if (changed.stageSlug === 'peinture') {
     const acier = bySlug('acier')

@@ -3,11 +3,16 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Project, Stage, ProjectStage } from '../types/database'
 
-const statusClass: Record<string, string> = {
-  en_cours: 'bg-red-100 text-red-800 border-red-300',
-  a_venir: 'bg-gray-100 text-gray-700 border-gray-300',
-  en_preparation: 'bg-blue-100 text-blue-800 border-blue-300',
-  camion_recu: 'bg-green-100 text-green-800 border-green-300',
+function todayISO() {
+  const d = new Date()
+  const z = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`
+}
+
+function isTodayCard(ps: ProjectStage) {
+  const t = todayISO()
+  if (!ps.start_date || !ps.end_date) return false
+  return ps.start_date <= t && ps.end_date >= t
 }
 
 export default function PlanningBoard({ isAdmin }: { isAdmin: boolean }) {
@@ -60,10 +65,18 @@ export default function PlanningBoard({ isAdmin }: { isAdmin: boolean }) {
     const next = [...list]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
+    const pinned = next.some((c) => (c.ps as any).is_pinned)
+    if (pinned && !confirm('Des étapes sont épinglées au calendrier. Réordonner quand même ?')) {
+      setDrag(null)
+      return
+    }
     await Promise.all(
       next.map((c, i) => supabase.from('project_stages').update({ queue_order: (i + 1) * 10 }).eq('id', c.ps.id))
     )
     setDrag(null)
+    if (confirm('Réoptimiser le calendrier selon ce nouvel ordre (douce, épingles conservées) ?')) {
+      window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+    }
     load()
   }
 
@@ -94,7 +107,11 @@ export default function PlanningBoard({ isAdmin }: { isAdmin: boolean }) {
                     onDragStart={() => setDrag({ id: ps.id, slug: st.slug })}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => onDrop(st.slug, ps.id)}
-                    className={`text-xs border rounded-lg px-2 py-1.5 ${statusClass[project.status] || 'bg-white'}`}
+                    className={`text-xs border rounded-lg px-2 py-1.5 ${
+                      isTodayCard(ps)
+                        ? 'bg-red-100 text-red-800 border-red-400 font-medium'
+                        : 'bg-white text-gray-800 border-gray-200'
+                    }`}
                   >
                     <Link to={`/projet/${project.id}`} className="font-medium block">
                       {project.project_number} — {project.client_name}

@@ -75,6 +75,7 @@ const DEFAULT_STAGE_RESOURCE: Record<string, ResourceId> = {
   aluminium: 'jig',
   grue: 'polyvalente',
   habillage: 'polyvalente',
+  pto: 'hors_porte',
   pdi: 'hors_porte',
   tests: 'hors_porte',
 }
@@ -369,9 +370,15 @@ export function scheduleProjects(
       if (options.pins?.[ps.id]) placePinnedExact(ps)
     }
 
-    // 1) Acier
+    // 0) PTO — 1 jour hors porte, défaut au début, jamais en même temps qu'acier/peinture
+    if (bySlug.pto) {
+      placeOne(bySlug.pto, new Date(globalCursor))
+    }
+
+    // 1) Acier (après PTO s'il est placé au début)
     if (bySlug.acier) {
-      placeOne(bySlug.acier, new Date(globalCursor))
+      const after = placed.pto ? nextBusinessDay(placed.pto.end) : new Date(globalCursor)
+      placeOne(bySlug.acier, after)
     }
 
     // 2) Peinture after acier end (or global if no acier)
@@ -432,6 +439,7 @@ export function scheduleProjects(
       let after = new Date(globalCursor)
       if (placed.peinture) after = nextBusinessDay(placed.peinture.end)
       else if (placed.acier) after = nextBusinessDay(placed.acier.end)
+      if (placed.pto && nextBusinessDay(placed.pto.end) > after) after = nextBusinessDay(placed.pto.end)
       placeOne(bySlug.grue, after)
     }
 
@@ -441,6 +449,7 @@ export function scheduleProjects(
       if (placed.aluminium) after = nextBusinessDay(placed.aluminium.end)
       if (placed.acier && nextBusinessDay(placed.acier.end) > after) after = nextBusinessDay(placed.acier.end)
       if (placed.peinture && nextBusinessDay(placed.peinture.end) > after) after = nextBusinessDay(placed.peinture.end)
+      if (placed.pto && nextBusinessDay(placed.pto.end) > after) after = nextBusinessDay(placed.pto.end)
 
       // If grue exists, ensure overlap ≤ maxGHOverlap
       if (placed.grue) {
