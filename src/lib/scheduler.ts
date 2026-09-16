@@ -230,6 +230,7 @@ interface PS {
   is_required: boolean
   is_completed: boolean
   duration_days: number | null
+  queue_order?: number | null
   stage?: Stage
 }
 
@@ -249,10 +250,23 @@ export function scheduleProjects(
   const defaultWeekly = options.defaultWeeklyHours ?? 240
   const weekUsed: Record<string, number> = {}
 
+  const queueOf = (projectId: string, slug: string) => {
+    const ps = (projectStages as PS[]).find((s) => {
+      const st = s.stage || stages.find((x) => x.id === s.stage_id)
+      return s.project_id === projectId && st?.slug === slug && s.is_required
+    })
+    return ps?.queue_order ?? 10000
+  }
+
   const sortedProjects = [...projects]
     .filter((p) => !(p as Project & { is_closed?: boolean }).is_closed)
     .filter((p) => p.on_calendar !== false)
-    .sort((a, b) => a.priority_order - b.priority_order)
+    .sort((a, b) => {
+      const qa = Math.min(queueOf(a.id, 'pto'), queueOf(a.id, 'acier'))
+      const qb = Math.min(queueOf(b.id, 'pto'), queueOf(b.id, 'acier'))
+      if (qa !== qb) return qa - qb
+      return a.priority_order - b.priority_order
+    })
   const occupancy: Occupancy = {}
   const result: ScheduledStage[] = []
   const estimatedDeliveries: Record<string, string> = {}
