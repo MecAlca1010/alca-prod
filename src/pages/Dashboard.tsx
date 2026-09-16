@@ -6,6 +6,7 @@ import AddProjectModal from '../components/AddProjectModal'
 import ProductionCalendar from '../components/ProductionCalendar'
 import ConfirmModal from '../components/ConfirmModal'
 import StageDurationsModal from '../components/StageDurationsModal'
+import DeliveryPreview from '../components/DeliveryPreview'
 import { scheduleProjects, type ScheduledStage } from '../lib/scheduler'
 import { laborHoursForProjectStage } from '../lib/labor'
 import { buildWeeklyHourCapacity } from '../lib/weeklyCapacity'
@@ -43,6 +44,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [resourceBlocks, setResourceBlocks] = useState<{ start_date: string; end_date: string; reason?: string | null }[]>([])
   const [materialOpen, setMaterialOpen] = useState(false)
   const [projectQuery, setProjectQuery] = useState('')
+  const [showDeliveries, setShowDeliveries] = useState(false)
 
   // Confirmation modal state
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -173,6 +175,12 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    const openDur = () => setShowDurationsModal(true)
+    window.addEventListener('alca-open-durations', openDur)
+    return () => window.removeEventListener('alca-open-durations', openDur)
+  }, [])
 
   useEffect(() => {
     const onReopt = () => loadData()
@@ -441,51 +449,34 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
           <p className="text-gray-500 mt-1">Planification de production</p>
         </div>
 
-        {isAdmin && (
-          <div className="flex gap-2">
-            <Link
-              to="/composants"
-              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
-            >
-              Composants
-            </Link>
-            <Link
-              to="/modeles-hiab"
-              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
-            >
-              Modèles Hiab
-            </Link>
-            <Link
-              to="/regles"
-              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
-            >
-              Règles
-            </Link>
-            <Link
-              to="/techniciens"
-              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition inline-flex items-center"
-            >
-              Techniciens
-            </Link>
-            <button
-              onClick={() => setShowDurationsModal(true)}
-              className="border border-gray-300 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition"
-            >
-              Durées des étapes
-            </button>
+        <div className="flex gap-2">
+          <Link to="/planning" className="border px-4 py-2.5 rounded-lg text-sm hover:bg-gray-50">
+            Planning par étape
+          </Link>
+          {isAdmin && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110 transition shadow-sm"
+              className="bg-alca-yellow text-alca-black font-black px-5 py-2.5 rounded-lg hover:brightness-110"
             >
               + Ajouter un projet
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Calendar */}
         <div className="xl:col-span-2">
+          {stages.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-3 px-1">
+              {stages.map((stage) => (
+                <div key={stage.id} className="flex items-center gap-1.5 text-xs">
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: stage.color }} />
+                  <span>{stage.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <ProductionCalendar
             scheduledStages={scheduledStages}
             isAdmin={isAdmin}
@@ -495,22 +486,21 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             onStageDatesChange={handleStageDatesChange}
             resourceBlocks={resourceBlocks}
           />
-
-          {/* Legend */}
-          <div className="mt-3 flex flex-wrap gap-3 px-1">
-            {stages.map((stage) => (
-              <div key={stage.id} className="flex items-center gap-1.5 text-xs">
-                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: stage.color }} />
-                <span>{stage.name}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Projects list with drag & drop */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-black">Projets</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black">Projets</h2>
+              <button
+                type="button"
+                onClick={() => setShowDeliveries(true)}
+                className="text-xs border px-2 py-1 rounded hover:bg-gray-50"
+              >
+                Aperçu livraisons
+              </button>
+            </div>
             {isAdmin && projects.length > 1 && (
               <span className="text-xs text-gray-400">Glisser pour réordonner</span>
             )}
@@ -699,6 +689,10 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
           onClose={() => setShowDurationsModal(false)}
           onSaved={handleDurationsSaved}
         />
+      )}
+
+      {showDeliveries && (
+        <DeliveryPreview projects={projects} onClose={() => setShowDeliveries(false)} />
       )}
 
       {confirmOpen && (

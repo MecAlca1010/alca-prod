@@ -44,6 +44,7 @@ export interface ProjectStage {
   start_date: string | null
   end_date: string | null
   duration_days: number | null
+  queue_order?: number | null
   stage?: Stage
 }
 

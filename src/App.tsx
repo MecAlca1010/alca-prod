@@ -9,6 +9,7 @@ import HiabModelsPage from './pages/HiabModelsPage'
 import RulesPage from './pages/RulesPage'
 import TechniciansPage from './pages/TechniciansPage'
 import DeliveredPage from './pages/DeliveredPage'
+import PlanningBoard from './pages/PlanningBoard'
 import Layout from './components/Layout'
 
 function App() {
@@ -63,6 +64,7 @@ function App() {
         <Route path="/regles" element={<RulesPage isAdmin={role === 'admin'} />} />
         <Route path="/techniciens" element={<TechniciansPage isAdmin={role === 'admin'} />} />
         <Route path="/livres" element={<DeliveredPage isAdmin={role === 'admin'} />} />
+        <Route path="/planning" element={<PlanningBoard isAdmin={role === 'admin'} />} />
       </Routes>
     </Layout>
   )

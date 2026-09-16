@@ -19,6 +19,7 @@ export default function Layout({ children, session, setSession, role }: LayoutPr
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,7 +57,8 @@ export default function Layout({ children, session, setSession, role }: LayoutPr
             <span className="font-black text-xl tracking-tight">Prod</span>
           </Link>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <NotificationBell enabled={role === 'admin'} />
             <button
               type="button"
               onClick={() => setShowAssistant(true)}
@@ -67,7 +69,6 @@ export default function Layout({ children, session, setSession, role }: LayoutPr
             </button>
             {session ? (
               <>
-                <NotificationBell enabled={role === 'admin'} />
                 <span className="text-sm text-gray-300 hidden sm:inline">
                   {role === 'tech' ? 'Mode Tech' : 'Mode Admin'}
                 </span>
@@ -77,6 +78,19 @@ export default function Layout({ children, session, setSession, role }: LayoutPr
                 >
                   Déconnexion
                 </button>
+                {role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMenu(true)}
+                    className="w-9 h-9 flex flex-col items-center justify-center gap-1 rounded hover:bg-alca-gray"
+                    title="Menu"
+                    aria-label="Menu"
+                  >
+                    <span className="block w-4 h-0.5 bg-white" />
+                    <span className="block w-4 h-0.5 bg-white" />
+                    <span className="block w-4 h-0.5 bg-white" />
+                  </button>
+                )}
               </>
             ) : (
               <button
@@ -151,10 +165,50 @@ export default function Layout({ children, session, setSession, role }: LayoutPr
         </div>
       )}
 
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[70]" onClick={() => setShowMenu(false)} />
+          <aside className="fixed top-0 right-0 h-full w-72 bg-alca-black text-white z-[80] shadow-2xl p-5">
+            <div className="flex justify-between items-center mb-6">
+              <span className="font-black">Menu</span>
+              <button onClick={() => setShowMenu(false)} className="text-2xl leading-none">×</button>
+            </div>
+            <nav className="space-y-1 text-sm">
+              {[
+                ['/composants', 'Composants'],
+                ['/modeles-hiab', 'Modèles Hiab'],
+                ['/regles', 'Règles'],
+                ['/techniciens', 'Techniciens'],
+                ['/planning', 'Planning par étape'],
+              ].map(([to, label]) => (
+                <Link
+                  key={to}
+                  to={to}
+                  onClick={() => setShowMenu(false)}
+                  className="block px-3 py-2 rounded hover:bg-alca-gray"
+                >
+                  {label}
+                </Link>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false)
+                  window.dispatchEvent(new CustomEvent('alca-open-durations'))
+                }}
+                className="w-full text-left px-3 py-2 rounded hover:bg-alca-gray"
+              >
+                Durées des étapes
+              </button>
+            </nav>
+          </aside>
+        </>
+      )}
+
       <AssistantPanel
         open={showAssistant}
         onClose={() => setShowAssistant(false)}
-        isAdmin={!!session}
+        isAdmin={role === 'admin'}
       />
     </div>
   )
