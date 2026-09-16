@@ -3,14 +3,16 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { useState } from 'react'
 import AssistantPanel from './AssistantPanel'
+import NotificationBell from './NotificationBell'
 
 interface LayoutProps {
   children: React.ReactNode
   session: Session | null
   setSession: (session: Session | null) => void
+  role?: 'admin' | 'tech' | null
 }
 
-export default function Layout({ children, session, setSession }: LayoutProps) {
+export default function Layout({ children, session, setSession, role }: LayoutProps) {
   const [showLogin, setShowLogin] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -65,8 +67,9 @@ export default function Layout({ children, session, setSession }: LayoutProps) {
             </button>
             {session ? (
               <>
+                <NotificationBell enabled={role === 'admin'} />
                 <span className="text-sm text-gray-300 hidden sm:inline">
-                  Mode Admin
+                  {role === 'tech' ? 'Mode Tech' : 'Mode Admin'}
                 </span>
                 <button
                   onClick={handleLogout}

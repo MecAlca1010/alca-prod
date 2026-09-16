@@ -13,16 +13,33 @@ import Layout from './components/Layout'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
+  const [role, setRole] = useState<'admin' | 'tech' | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const loadRole = async (sess: Session | null) => {
+    if (!sess?.user) {
+      setRole(null)
+      return
+    }
+    const { data } = await supabase.from('profiles').select('role').eq('id', sess.user.id).maybeSingle()
+    const r = (data as any)?.role
+    if (r === 'admin' || r === 'tech') setRole(r)
+    else {
+      const email = (sess.user.email || '').toLowerCase()
+      if (email === 'production@mecanoalca.ca') setRole('tech')
+      else setRole('admin')
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setLoading(false)
+      loadRole(session).finally(() => setLoading(false))
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      loadRole(session)
     })
 
     return () => subscription.unsubscribe()
@@ -37,15 +54,15 @@ function App() {
   }
 
   return (
-    <Layout session={session} setSession={setSession}>
+    <Layout session={session} setSession={setSession} role={role}>
       <Routes>
-        <Route path="/" element={<Dashboard isAdmin={!!session} />} />
-        <Route path="/projet/:id" element={<ProjectDetail isAdmin={!!session} />} />
-        <Route path="/composants" element={<ComponentsPage isAdmin={!!session} />} />
-        <Route path="/modeles-hiab" element={<HiabModelsPage isAdmin={!!session} />} />
-        <Route path="/regles" element={<RulesPage isAdmin={!!session} />} />
-        <Route path="/techniciens" element={<TechniciansPage isAdmin={!!session} />} />
-        <Route path="/livres" element={<DeliveredPage isAdmin={!!session} />} />
+        <Route path="/" element={<Dashboard isAdmin={role === 'admin'} />} />
+        <Route path="/projet/:id" element={<ProjectDetail isAdmin={role === 'admin'} isTech={role === 'tech'} />} />
+        <Route path="/composants" element={<ComponentsPage isAdmin={role === 'admin'} />} />
+        <Route path="/modeles-hiab" element={<HiabModelsPage isAdmin={role === 'admin'} />} />
+        <Route path="/regles" element={<RulesPage isAdmin={role === 'admin'} />} />
+        <Route path="/techniciens" element={<TechniciansPage isAdmin={role === 'admin'} />} />
+        <Route path="/livres" element={<DeliveredPage isAdmin={role === 'admin'} />} />
       </Routes>
     </Layout>
   )

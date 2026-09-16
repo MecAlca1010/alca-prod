@@ -6,6 +6,7 @@ import { STAGE_OPTIONS } from '../lib/labor'
 
 interface ProjectDetailProps {
   isAdmin: boolean
+  isTech?: boolean
 }
 
 const statusOptions: { value: ProjectStatus; label: string; color: string }[] = [
@@ -15,7 +16,7 @@ const statusOptions: { value: ProjectStatus; label: string; color: string }[] = 
   { value: 'camion_recu', label: 'Camion reçu', color: 'bg-green-100 text-green-800 border-green-300' },
 ]
 
-export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
+export default function ProjectDetail({ isAdmin, isTech = false }: ProjectDetailProps) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -137,7 +138,7 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
   }
 
   const toggleStageCompleted = async (ps: ProjectStage & { stage: Stage }) => {
-    if (!isAdmin) return
+    if (!isAdmin && !isTech) return
     const newValue = !ps.is_completed
     const today = new Date()
     const todayStr = today.toISOString().slice(0, 10)
@@ -169,12 +170,34 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
         )
       )
       window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+      await notifyStageChange(true, ps.stage?.name || '')
     } else {
       if (!confirm(`Réouvrir « ${ps.stage?.name} » ?`)) return
       await supabase.from('project_stages').update({ is_completed: false, is_pinned: false }).eq('id', ps.id)
       setProjectStages((prev) => prev.map((s) => (s.id === ps.id ? { ...s, is_completed: false } : s)))
       window.dispatchEvent(new CustomEvent('alca-reoptimize'))
+      await notifyStageChange(false, ps.stage?.name || '')
     }
+  }
+
+  const notifyStageChange = async (done: boolean, stageName: string) => {
+    if (!project) return
+    const title = done ? `Étape terminée — ${project.project_number}` : `Étape réouverte — ${project.project_number}`
+    const body = `Projet ${project.project_number} — ${project.client_name}\nÉtape ${stageName} ${done ? 'terminée' : 'réouverte'}.`
+    const { data: admins } = await supabase.from('profiles').select('id').eq('role', 'admin')
+    for (const a of admins || []) {
+      await supabase.from('notifications').insert({ user_id: a.id, title, body })
+    }
+    fetch('/.netlify/functions/notify-stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectNumber: project.project_number,
+        clientName: project.client_name,
+        stageName,
+        action: done ? 'complete' : 'reopen',
+      }),
+    }).catch(() => {})
   }
 
   const toggleStageRequired = async (stageId: string, currentlyRequired: boolean) => {
@@ -555,20 +578,18 @@ export default function ProjectDetail({ isAdmin }: ProjectDetailProps) {
                   <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ backgroundColor: stage.color }} />
                   <span className={`flex-1 text-sm ${isCompleted ? 'line-through text-gray-400' : ''}`}>{stage.name}</span>
                   {isAdmin && (
-                    <>
-                      <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                        <input type="checkbox" checked={isRequired} onChange={() => toggleStageRequired(stage.id, isRequired)} className="w-3.5 h-3.5" />
-                        Requis
-                      </label>
-                      {isRequired && (
-                        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                          <input type="checkbox" checked={isCompleted} onChange={() => ps && toggleStageCompleted(ps)} className="w-3.5 h-3.5 accent-green-600" />
-                          <span className={isCompleted ? 'text-green-600 font-medium' : 'text-gray-500'}>Terminé</span>
-                        </label>
-                      )}
-                    </>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                      <input type="checkbox" checked={isRequired} onChange={() => toggleStageRequired(stage.id, isRequired)} className="w-3.5 h-3.5" />
+                      Requis
+                    </label>
                   )}
-                  {!isAdmin && isRequired && (
+                  {isRequired && (isAdmin || isTech) && (
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                      <input type="checkbox" checked={isCompleted} onChange={() => ps && toggleStageCompleted(ps)} className="w-3.5 h-3.5 accent-green-600" />
+                      <span className={isCompleted ? 'text-green-600 font-medium' : 'text-gray-500'}>Terminé</span>
+                    </label>
+                  )}
+                  {isRequired && !isAdmin && !isTech && (
                     <span className={`text-xs ${isCompleted ? 'text-green-600' : 'text-gray-400'}`}>
                       {isCompleted ? '✓ Terminé' : 'En attente'}
                     </span>
