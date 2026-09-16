@@ -253,7 +253,7 @@ export function scheduleProjects(
   const queueOf = (projectId: string, slug: string) => {
     const ps = (projectStages as PS[]).find((s) => {
       const st = s.stage || stages.find((x) => x.id === s.stage_id)
-      return s.project_id === projectId && st?.slug === slug && s.is_required
+      return s.project_id === projectId && st?.slug === slug && s.is_required && !s.is_completed
     })
     return ps?.queue_order ?? 10000
   }
@@ -262,10 +262,10 @@ export function scheduleProjects(
     .filter((p) => !(p as Project & { is_closed?: boolean }).is_closed)
     .filter((p) => p.on_calendar !== false)
     .sort((a, b) => {
+      if (a.priority_order !== b.priority_order) return a.priority_order - b.priority_order
       const qa = Math.min(queueOf(a.id, 'pto'), queueOf(a.id, 'acier'))
       const qb = Math.min(queueOf(b.id, 'pto'), queueOf(b.id, 'acier'))
-      if (qa !== qb) return qa - qb
-      return a.priority_order - b.priority_order
+      return qa - qb
     })
   const occupancy: Occupancy = {}
   const result: ScheduledStage[] = []
@@ -276,7 +276,7 @@ export function scheduleProjects(
 
   for (const project of sortedProjects) {
     const pStages = (projectStages as PS[])
-      .filter((ps) => ps.project_id === project.id && ps.is_required)
+      .filter((ps) => ps.project_id === project.id && ps.is_required && !ps.is_completed)
       .map((ps) => {
         const stage = ps.stage || stages.find((s) => s.id === ps.stage_id)
         return { ...ps, stage }
@@ -384,8 +384,9 @@ export function scheduleProjects(
       if (options.pins?.[ps.id]) placePinnedExact(ps)
     }
 
-    // 0) PTO — 1 jour hors porte, défaut au début, jamais en même temps qu'acier/peinture
-    if (bySlug.pto) {
+    // 0) PTO seulement si camion reçu ou projet en cours
+    const truckHere = project.status === 'camion_recu' || project.status === 'en_cours'
+    if (bySlug.pto && truckHere) {
       placeOne(bySlug.pto, new Date(globalCursor))
     }
 
@@ -532,9 +533,15 @@ export function scheduleProjects(
       placeOne(bySlug.pdi, after)
     }
 
-    // 7) Tests after PDI
+    // 7) Lavage / livraison TOUJOURS en dernier (même sans PDI)
     if (bySlug.tests) {
-      const after = placed.pdi ? nextBusinessDay(placed.pdi.end) : new Date(globalCursor)
+      let after = new Date(globalCursor)
+      for (const slug of ['pto', 'acier', 'peinture', 'aluminium', 'grue', 'habillage', 'pdi'] as const) {
+        if (placed[slug]) {
+          const n = nextBusinessDay(placed[slug].end)
+          if (n > after) after = n
+        }
+      }
       placeOne(bySlug.tests, after)
     }
 

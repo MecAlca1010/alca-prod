@@ -27,6 +27,7 @@ interface ProductionCalendarProps {
   isAdmin: boolean
   onReoptimize?: () => void
   onForceReoptimize?: () => void
+  onUndo?: () => void
   isOptimizing?: boolean
   onStageDatesChange?: (stage: ScheduledStage) => Promise<void>
   resourceBlocks?: ResourceBlockBar[]
@@ -39,6 +40,7 @@ export default function ProductionCalendar({
   isAdmin,
   onReoptimize,
   onForceReoptimize,
+  onUndo,
   isOptimizing,
   onStageDatesChange,
   resourceBlocks = [],
@@ -343,6 +345,15 @@ export default function ProductionCalendar({
               className="px-3 py-1 bg-alca-yellow text-alca-black font-black rounded text-sm hover:brightness-110 disabled:opacity-50"
             >
               {isOptimizing ? 'Optimisation...' : 'Réoptimiser'}
+            </button>
+          )}
+          {isAdmin && onUndo && (
+            <button
+              onClick={onUndo}
+              className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+              title="Annuler la dernière réopti"
+            >
+              ↩ Annuler
             </button>
           )}
           {isAdmin && onForceReoptimize && (

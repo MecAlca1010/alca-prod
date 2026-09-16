@@ -2,8 +2,8 @@ import type { Component, ProjectComponent, Stage } from '../types/database'
 
 export const FIXED_STAGE_DAYS: Record<string, number> = {
   pto: 1,
-  peinture: 2,
-  pdi: 2,
+  peinture: 1,
+  pdi: 1,
   tests: 1,
 }
 
@@ -14,8 +14,8 @@ export const STAGE_OPTIONS: { slug: string; label: string }[] = [
   { slug: 'aluminium', label: 'Aluminium / Plate-forme' },
   { slug: 'grue', label: 'Grue / branchements' },
   { slug: 'habillage', label: 'Habillage / accessoires' },
-  { slug: 'pdi', label: 'PDI / lavage' },
-  { slug: 'tests', label: 'Tests / livraison' },
+  { slug: 'pdi', label: 'PDI / Tests' },
+  { slug: 'tests', label: 'Lavage / Livraison' },
 ]
 
 export const DEFAULT_MAX_TECHS: Record<string, number> = {

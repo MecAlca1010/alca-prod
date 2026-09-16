@@ -52,6 +52,42 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
   const [confirmMessage, setConfirmMessage] = useState('')
 
   const savingOrder = useRef(false)
+  const historyRef = useRef<{ id: string; start_date: string | null; end_date: string | null; duration_days: number | null; is_pinned?: boolean }[][]>([])
+  const [canUndo, setCanUndo] = useState(false)
+
+  const pushHistory = (rows: (ProjectStage & { is_pinned?: boolean })[]) => {
+    historyRef.current.push(
+      rows.map((r) => ({
+        id: r.id,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        duration_days: r.duration_days,
+        is_pinned: (r as any).is_pinned,
+      }))
+    )
+    if (historyRef.current.length > 20) historyRef.current.shift()
+    setCanUndo(true)
+  }
+
+  const handleUndo = async () => {
+    const snap = historyRef.current.pop()
+    setCanUndo(historyRef.current.length > 0)
+    if (!snap) return
+    await Promise.all(
+      snap.map((r) =>
+        supabase
+          .from('project_stages')
+          .update({
+            start_date: r.start_date,
+            end_date: r.end_date,
+            duration_days: r.duration_days,
+            is_pinned: r.is_pinned ?? false,
+          })
+          .eq('id', r.id)
+      )
+    )
+    loadData()
+  }
 
   const loadData = useCallback(async () => {
     const [projectsRes, stagesRes, psRes] = await Promise.all([
@@ -285,8 +321,9 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
 
   const handleReoptimize = async (force = false) => {
     if (projects.length === 0) return
+    pushHistory(projectStages as any)
     if (force) {
-      if (!confirm('Réoptimiser TOUT le calendrier ? Les déplacements manuels et épingles seront perdus.')) return
+      if (!confirm('Réoptimiser TOUT le calendrier ? Les déplacements manuels et épingles seront perdus. Tu pourras annuler (↩).')) return
       const { data: allPs } = await supabase.from('project_stages').select('id')
       const ids = (allPs || []).map((r: { id: string }) => r.id)
       if (ids.length) {
@@ -482,6 +519,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             isAdmin={isAdmin}
             onReoptimize={() => handleReoptimize(false)}
             onForceReoptimize={() => handleReoptimize(true)}
+            onUndo={canUndo ? handleUndo : undefined}
             isOptimizing={isOptimizing}
             onStageDatesChange={handleStageDatesChange}
             resourceBlocks={resourceBlocks}
