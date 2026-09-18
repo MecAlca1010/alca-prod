@@ -124,7 +124,7 @@ export default function PlanningBoard({ isAdmin }: { isAdmin: boolean }) {
           <div className="w-56 shrink-0 bg-white border rounded-xl p-2">
             <div className="text-xs font-black mb-2 px-1">Prêt / à livrer</div>
             {ready.map((p) => (
-              <div key={p.id} className={`text-xs border rounded-lg px-2 py-1.5 mb-2 ${statusClass[p.status] || ''}`}>
+              <div key={p.id} className="text-xs border rounded-lg px-2 py-1.5 mb-2 bg-white text-gray-800 border-gray-200">
                 <Link to={`/projet/${p.id}`}>{p.project_number} — {p.client_name}</Link>
               </div>
             ))}
