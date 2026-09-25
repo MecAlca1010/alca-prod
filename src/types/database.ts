@@ -1,4 +1,4 @@
-export type ProjectStatus = 'en_cours' | 'a_venir' | 'en_preparation' | 'camion_recu' | 'livre'
+export type ProjectStatus = 'en_cours' | 'a_venir' | 'en_preparation' | 'camion_recu' | 'pdi' | 'livre'
 
 export interface Stage {
   id: string

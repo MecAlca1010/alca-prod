@@ -19,7 +19,31 @@ export async function handler(event) {
     return json(400, { error: 'JSON invalide' })
   }
 
-  const { projectNumber, clientName, stageName, action } = body
+  const { projectNumber, clientName, stageName, action, type } = body
+  if (type === 'pdi_ready') {
+    const apiKeyPdi = (process.env.RESEND_API_KEY || '').trim()
+    if (!apiKeyPdi) return json(200, { emailed: false, reason: 'RESEND_API_KEY manquante' })
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKeyPdi}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'ALCA Prod <production@mecanoalca.ca>',
+          to: ['jonathan@mecanoalca.ca'],
+          subject: `ALCA Prod — Prêt pour PDI : ${projectNumber}`,
+          text: `${clientName} — ${projectNumber} terminé, prêt pour PDI.`,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) return json(200, { emailed: false, reason: data.message || res.status })
+      return json(200, { emailed: true, id: data.id })
+    } catch (e) {
+      return json(200, { emailed: false, reason: e.message })
+    }
+  }
   const done = action !== 'reopen'
   const subject = done
     ? `ALCA Prod — Étape terminée : ${projectNumber}`
@@ -41,7 +65,7 @@ export async function handler(event) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM || 'ALCA Prod <onboarding@resend.dev>',
+        from: process.env.RESEND_FROM || 'ALCA Prod <production@mecanoalca.ca>',
         to: ADMIN_EMAILS,
         subject,
         text,

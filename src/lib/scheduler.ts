@@ -13,7 +13,7 @@
  * - Aluminium-only jobs can fill jig gaps (priority still applies)
  */
 
-import { formatDate, nextBusinessDay, isBusinessDay, subtractBusinessDays } from './dates'
+import { formatDate, nextBusinessDay, isBusinessDay, subtractBusinessDays, addBusinessDays, parseDate, snapToBusinessDay, countBusinessDays } from './dates'
 import type { Project, ProjectStage, Stage } from '../types/database'
 import { durationDaysForStage, hoursPerDayForStage, isoWeekKey, DEFAULT_MAX_TECHS } from './labor'
 
@@ -556,4 +556,54 @@ export function scheduleProjects(
   }
 
   return { stages: result, estimatedDeliveries }
+}
+
+const STAGE_ORDER = ['pto', 'acier', 'peinture', 'aluminium', 'grue', 'habillage', 'pdi', 'tests']
+
+const STAGE_PREDECESSORS: Record<string, string[]> = {
+  peinture: ['acier'],
+  grue: ['peinture'],
+  habillage: ['aluminium', 'peinture', 'acier'],
+  pdi: ['habillage', 'grue', 'aluminium', 'peinture', 'acier'],
+  tests: ['pdi', 'habillage', 'grue', 'aluminium', 'peinture', 'acier'],
+}
+
+/** Décale uniquement les étapes suivantes du même projet pour respecter les deps. */
+export function cascadeSameProject(changed: ScheduledStage, all: ScheduledStage[]): ScheduledStage[] {
+  const bySlug: Record<string, ScheduledStage> = {}
+  for (const s of all) {
+    if (s.projectId !== changed.projectId || s.isCompleted) continue
+    bySlug[s.stageSlug] = s.projectStageId === changed.projectStageId ? changed : { ...s }
+  }
+  bySlug[changed.stageSlug] = { ...changed }
+
+  const startIdx = STAGE_ORDER.indexOf(changed.stageSlug)
+  const after = startIdx < 0 ? STAGE_ORDER : STAGE_ORDER.slice(startIdx + 1)
+
+  for (const slug of after) {
+    const st = bySlug[slug]
+    if (!st) continue
+    const preds = STAGE_PREDECESSORS[slug] || []
+    let minStart = parseDate(st.startDate)
+    for (const p of preds) {
+      const pred = bySlug[p]
+      if (!pred) continue
+      const afterPred = nextBusinessDay(parseDate(pred.endDate))
+      if (afterPred > minStart) minStart = afterPred
+    }
+    const dur = Math.max(1, st.durationDays || 1)
+    const newStart = snapToBusinessDay(minStart)
+    const newEnd = dur <= 1 ? new Date(newStart) : addBusinessDays(newStart, dur - 1)
+    bySlug[slug] = {
+      ...st,
+      startDate: formatDate(newStart),
+      endDate: formatDate(newEnd),
+      durationDays: countBusinessDays(newStart, newEnd),
+    }
+  }
+
+  return all.map((s) => {
+    if (s.projectId !== changed.projectId) return s
+    return bySlug[s.stageSlug] || s
+  })
 }

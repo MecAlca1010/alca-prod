@@ -30,7 +30,9 @@ interface ProductionCalendarProps {
   onUndo?: () => void
   isOptimizing?: boolean
   onStageDatesChange?: (stage: ScheduledStage) => Promise<void>
+  onCascadeProject?: (stage: ScheduledStage, all: ScheduledStage[]) => Promise<void>
   resourceBlocks?: ResourceBlockBar[]
+  highlightQuery?: string
 }
 
 type DragMode = 'move' | 'resize-left' | 'resize-right' | null
@@ -43,11 +45,15 @@ export default function ProductionCalendar({
   onUndo,
   isOptimizing,
   onStageDatesChange,
+  onCascadeProject,
   resourceBlocks = [],
+  highlightQuery = '',
 }: ProductionCalendarProps) {
   const [weekOffset, setWeekOffset] = useState(0)
-  const [expanded, setExpanded] = useState(false)
   const [localStages, setLocalStages] = useState<ScheduledStage[]>(scheduledStages)
+  const [dateEdit, setDateEdit] = useState<ScheduledStage | null>(null)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
 
   // Sync from parent when schedule changes
   useEffect(() => {
@@ -57,8 +63,10 @@ export default function ProductionCalendar({
   // Drag state
   const [dragMode, setDragMode] = useState<DragMode>(null)
   const [dragStageId, setDragStageId] = useState<string | null>(null)
-  const dragOrigin = useRef<{ x: number; startDate: string; endDate: string } | null>(null)
-  const dayWidthRef = useRef(80) // approximate, updated on layout
+  const dragOrigin = useRef<{ x: number; y: number; startDate: string; endDate: string } | null>(null)
+  const dayWidthRef = useRef(80)
+  const weekHeightRef = useRef(120)
+  const lastClickRef = useRef<{ id: string; t: number } | null>(null)
 
   // Confirm for rule violations
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -69,20 +77,28 @@ export default function ProductionCalendar({
 
   const baseWeekStart = useMemo(() => startOfWeek(new Date()), [])
 
-  const weeksToShow = useMemo(() => {
-    if (!expanded) return 4
-    if (localStages.length === 0) return 8
+  const weeksToShow = 4
+
+  const maxWeekOffset = useMemo(() => {
+    if (localStages.length === 0) return 12
     let maxEnd = localStages[0].endDate
     for (const s of localStages) {
       if (s.endDate > maxEnd) maxEnd = s.endDate
     }
     const lastWeekStart = startOfWeek(parseDate(maxEnd))
-    const firstVisible = new Date(baseWeekStart)
-    firstVisible.setDate(baseWeekStart.getDate() + weekOffset * 7)
     const msPerWeek = 7 * 24 * 60 * 60 * 1000
-    const diffMs = lastWeekStart.getTime() - firstVisible.getTime()
-    return Math.min(Math.max(4, Math.ceil(diffMs / msPerWeek) + 1), 52)
-  }, [expanded, localStages, baseWeekStart, weekOffset])
+    const diff = Math.ceil((lastWeekStart.getTime() - baseWeekStart.getTime()) / msPerWeek)
+    return Math.max(0, diff)
+  }, [localStages, baseWeekStart])
+
+  const q = highlightQuery.trim().toLowerCase()
+  const isHighlighted = (s: ScheduledStage) => {
+    if (!q) return true
+    return (
+      s.projectNumber.toLowerCase().includes(q) ||
+      s.clientName.toLowerCase().includes(q)
+    )
+  }
 
   const weeks = useMemo(() => {
     const result: { start: Date; days: Date[] }[] = []
@@ -207,6 +223,7 @@ export default function ProductionCalendar({
     stagesBeforeEdit.current = localStages.map((s) => ({ ...s }))
     dragOrigin.current = {
       x: e.clientX,
+      y: e.clientY,
       startDate: stage.startDate,
       endDate: stage.endDate,
     }
@@ -219,9 +236,10 @@ export default function ProductionCalendar({
       try {
       if (!dragOrigin.current) return
       const dx = e.clientX - dragOrigin.current.x
-      // ~ one day column ≈ measured; fallback 70px
+      const dy = e.clientY - dragOrigin.current.y
       const dayPx = dayWidthRef.current || 70
-      const dayDelta = Math.round(dx / dayPx)
+      const weekPx = weekHeightRef.current || 120
+      const dayDelta = Math.round(dx / dayPx) + Math.round(dy / weekPx) * 5
 
       setLocalStages((prev) =>
         prev.map((s) => {
@@ -323,11 +341,28 @@ export default function ProductionCalendar({
     }
   }, [dragMode, dragStageId, applyStageUpdate, localStages])
 
-  const expandLabel = expanded
-    ? 'Réduire (4 semaines)'
-    : localStages.length > 0
-      ? 'Agrandir (jusqu’à la fin)'
-      : 'Agrandir'
+  const openDateEdit = (stage: ScheduledStage) => {
+    setDateEdit(stage)
+    setEditStart(stage.startDate)
+    setEditEnd(stage.endDate)
+  }
+
+  const applyDateEdit = () => {
+    if (!dateEdit || !editStart || !editEnd) return
+    let s = snapToBusinessDay(parseDate(editStart))
+    let e = snapToBusinessDay(parseDate(editEnd))
+    if (e < s) e = new Date(s)
+    const updated: ScheduledStage = {
+      ...dateEdit,
+      startDate: formatDate(s),
+      endDate: formatDate(e),
+      durationDays: countBusinessDays(s, e),
+    }
+    setDateEdit(null)
+    originalStage.current = { ...dateEdit }
+    stagesBeforeEdit.current = localStages.map((x) => ({ ...x }))
+    applyStageUpdate(updated, localStages.map((x) => (x.projectStageId === updated.projectStageId ? updated : x)))
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
@@ -336,8 +371,11 @@ export default function ProductionCalendar({
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setWeekOffset((o) => o - 1)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">←</button>
           <button onClick={() => setWeekOffset(0)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">Aujourd'hui</button>
-          <button onClick={() => setWeekOffset((o) => o + 1)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">→</button>
-          <button onClick={() => setExpanded((e) => !e)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">{expandLabel}</button>
+          <button
+            onClick={() => setWeekOffset((o) => Math.min(maxWeekOffset, o + 1))}
+            disabled={weekOffset >= maxWeekOffset}
+            className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40"
+          >→</button>
           {isAdmin && onReoptimize && (
             <button
               onClick={onReoptimize}
@@ -371,7 +409,7 @@ export default function ProductionCalendar({
 
       {isAdmin && (
         <p className="text-xs text-gray-400 mb-3">
-          Mode admin : glisse le milieu d’une barre pour la déplacer, les bords pour changer la durée.
+          Mode admin : glisse une barre (gauche-droite ou vers une autre semaine). Double-clic pour entrer les dates.
           Si une règle est cassée, une confirmation s’affiche.
         </p>
       )}
@@ -391,14 +429,8 @@ export default function ProductionCalendar({
         </div>
       )}
 
-      {expanded && localStages.length > 0 && (
-        <p className="text-xs text-gray-400 mb-3">
-          Vue étendue : {weeksToShow} semaines. Faites défiler pour voir plus loin.
-        </p>
-      )}
-
       <div
-        className={`space-y-6 ${expanded ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}
+        className="space-y-6"
         ref={(el) => {
           if (el) {
             const w = el.getBoundingClientRect().width
@@ -418,7 +450,12 @@ export default function ProductionCalendar({
           const barsHeight = (maxLane + 1) * (laneHeight + 4) + 8
 
           return (
-            <div key={week.start.toISOString()}>
+            <div
+              key={week.start.toISOString()}
+              ref={(el) => {
+                if (el) weekHeightRef.current = Math.max(80, el.getBoundingClientRect().height + 24)
+              }}
+            >
               <div className="text-xs font-medium text-gray-500 mb-2">{formatWeekRange(week.start)}</div>
               <div className="grid grid-cols-5 gap-px mb-1">
                 {week.days.map((day) => {
@@ -468,13 +505,26 @@ export default function ProductionCalendar({
                         top: 4 + lane * (laneHeight + 4),
                         height: laneHeight,
                         backgroundColor: stage.color,
-                        opacity: stage.isCompleted ? 0.45 : isDragging ? 0.9 : 1,
+                        opacity: stage.isCompleted ? 0.45 : !isHighlighted(stage) ? 0.18 : isDragging ? 0.9 : 1,
                         textDecoration: stage.isCompleted ? 'line-through' : 'none',
                       }}
                       title={`${stage.projectNumber} — ${stage.clientName}\n${stage.stageName}\n${stage.startDate} → ${stage.endDate} (${stage.durationDays} j)`}
-                      onPointerDown={(e) => {
-                        // Middle = move (not on edges)
+                      onDoubleClick={(e) => {
                         if (!isAdmin) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragMode(null)
+                        setDragStageId(null)
+                        openDateEdit(stage)
+                      }}
+                      onPointerDown={(e) => {
+                        if (!isAdmin) return
+                        const now = Date.now()
+                        if (lastClickRef.current && lastClickRef.current.id === stage.projectStageId && now - lastClickRef.current.t < 350) {
+                          lastClickRef.current = null
+                          return
+                        }
+                        lastClickRef.current = { id: stage.projectStageId, t: now }
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                         const relX = e.clientX - rect.left
                         const edge = 8
@@ -533,9 +583,40 @@ export default function ProductionCalendar({
           }
           confirmLabel="Oui, garder"
           cancelLabel="Non, annuler"
+          extraLabel={onCascadeProject ? 'Réoptimiser ce projet' : undefined}
+          onExtra={
+            onCascadeProject && pendingStage
+              ? async () => {
+                  const st = pendingStage
+                  const all = localStages
+                  setConfirmOpen(false)
+                  setPendingStage(null)
+                  await onCascadeProject(st, all)
+                }
+              : undefined
+          }
           onConfirm={handleConfirmOverride}
           onCancel={handleCancelOverride}
         />
+      )}
+
+      {dateEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5">
+            <h2 className="text-lg font-black mb-1">Dates de l’étape</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              {dateEdit.projectNumber} — {dateEdit.stageName}
+            </p>
+            <label className="block text-xs text-gray-500 mb-1">Début</label>
+            <input type="date" value={editStart} onChange={(e) => setEditStart(e.target.value)} className="w-full border rounded-lg px-3 py-2 mb-3" />
+            <label className="block text-xs text-gray-500 mb-1">Fin</label>
+            <input type="date" value={editEnd} onChange={(e) => setEditEnd(e.target.value)} className="w-full border rounded-lg px-3 py-2 mb-4" />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setDateEdit(null)} className="flex-1 border py-2 rounded-lg">Annuler</button>
+              <button type="button" onClick={applyDateEdit} className="flex-1 bg-alca-yellow font-black py-2 rounded-lg">Appliquer</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

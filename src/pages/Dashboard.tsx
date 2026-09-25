@@ -7,7 +7,7 @@ import ProductionCalendar from '../components/ProductionCalendar'
 import ConfirmModal from '../components/ConfirmModal'
 import StageDurationsModal from '../components/StageDurationsModal'
 import DeliveryPreview from '../components/DeliveryPreview'
-import { scheduleProjects, type ScheduledStage } from '../lib/scheduler'
+import { scheduleProjects, cascadeSameProject, type ScheduledStage } from '../lib/scheduler'
 import { laborHoursForProjectStage } from '../lib/labor'
 import { buildWeeklyHourCapacity } from '../lib/weeklyCapacity'
 
@@ -20,6 +20,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   a_venir: { label: 'À venir', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   en_preparation: { label: 'En préparation', color: 'bg-blue-100 text-blue-800 border-blue-300' },
   camion_recu: { label: 'Camion reçu', color: 'bg-green-100 text-green-800 border-green-300' },
+  pdi: { label: 'PDI', color: 'bg-purple-100 text-purple-800 border-purple-300' },
 }
 
 export default function Dashboard({ isAdmin }: DashboardProps) {
@@ -142,7 +143,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             compBuckets[pc.component_id] = { en_production: 0, a_preparer: 0, a_venir: 0 }
           }
           const qty = pc.quantity || 1
-          if (status === 'en_cours') {
+          if (status === 'en_cours' || status === 'pdi') {
             compBuckets[pc.component_id].en_production += qty
           } else if (status === 'en_preparation' || status === 'camion_recu') {
             compBuckets[pc.component_id].a_preparer += qty
@@ -341,6 +342,25 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
     await runSchedule(fresh.length ? fresh : projects, stagesUse, stages)
   }
 
+  const handleCascadeProject = async (stage: ScheduledStage, all: ScheduledStage[]) => {
+    const next = cascadeSameProject(stage, all)
+    const mine = next.filter((s) => s.projectId === stage.projectId)
+    await Promise.all(
+      mine.map((s) =>
+        supabase
+          .from('project_stages')
+          .update({
+            start_date: s.startDate,
+            end_date: s.endDate,
+            duration_days: s.durationDays,
+            is_pinned: true,
+          })
+          .eq('id', s.projectStageId)
+      )
+    )
+    setScheduledStages(next)
+  }
+
   const handleStageDatesChange = async (stage: ScheduledStage) => {
     // Persist manual override to DB
     await supabase
@@ -522,6 +542,8 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             onUndo={canUndo ? handleUndo : undefined}
             isOptimizing={isOptimizing}
             onStageDatesChange={handleStageDatesChange}
+            onCascadeProject={handleCascadeProject}
+            highlightQuery={projectQuery}
             resourceBlocks={resourceBlocks}
           />
         </div>

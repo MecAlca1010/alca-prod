@@ -14,6 +14,7 @@ const statusOptions: { value: ProjectStatus; label: string; color: string }[] = 
   { value: 'a_venir', label: 'À venir', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   { value: 'en_preparation', label: 'En préparation', color: 'bg-blue-100 text-blue-800 border-blue-300' },
   { value: 'camion_recu', label: 'Camion reçu', color: 'bg-green-100 text-green-800 border-green-300' },
+  { value: 'pdi', label: 'PDI', color: 'bg-purple-100 text-purple-800 border-purple-300' },
 ]
 
 export default function ProjectDetail({ isAdmin, isTech = false }: ProjectDetailProps) {
@@ -129,6 +130,17 @@ export default function ProjectDetail({ isAdmin, isTech = false }: ProjectDetail
     if (error) {
       setMessage('Erreur: ' + error.message)
     } else {
+      if (status === 'pdi' && project.status !== 'pdi') {
+        fetch('/.netlify/functions/notify-stage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'pdi_ready',
+            projectNumber: projectNumber.trim(),
+            clientName: clientName.trim(),
+          }),
+        }).catch(() => {})
+      }
       setMessage('Enregistré ✓')
       setEditingSharepoint(false)
       setTimeout(() => setMessage(''), 2500)
@@ -466,13 +478,13 @@ export default function ProjectDetail({ isAdmin, isTech = false }: ProjectDetail
           {showAcc && (
             <div className="mt-3 space-y-2">
               {[
-                { key: 'pompe', label: 'Pompe', sn: true },
-                { key: 'pto', label: 'PTO', sn: false },
-                { key: 'convertisseur', label: 'Convertisseur', sn: false },
-                { key: 'reservoir', label: 'Réservoir', sn: false },
-                { key: 'manette', label: 'Manette', sn: false },
-                { key: 'fourche', label: 'Fourche', sn: true },
-                { key: 'pad', label: 'Pad anticalle', sn: false },
+                { key: 'pompe', label: 'Pompe' },
+                { key: 'pto', label: 'PTO' },
+                { key: 'convertisseur', label: 'Convertisseur' },
+                { key: 'reservoir', label: 'Réservoir' },
+                { key: 'manette', label: 'Manette' },
+                { key: 'fourche', label: 'Fourche' },
+                { key: 'pad', label: 'Pad anticalle' },
               ].map((row) => {
                 const a = accessories[row.key] || {}
                 return (
@@ -487,15 +499,13 @@ export default function ProjectDetail({ isAdmin, isTech = false }: ProjectDetail
                       />
                       {row.label}
                     </label>
-                    {row.sn && (
-                      <input
-                        placeholder="S/N"
-                        disabled={!isAdmin}
-                        value={a.sn || ''}
-                        onChange={(e) => setAccessories((prev) => ({ ...prev, [row.key]: { ...a, sn: e.target.value } }))}
-                        className="w-28 border rounded px-2 py-1 text-xs"
-                      />
-                    )}
+                    <input
+                      placeholder=""
+                      disabled={!isAdmin}
+                      value={a.sn || ''}
+                      onChange={(e) => setAccessories((prev) => ({ ...prev, [row.key]: { ...a, sn: e.target.value } }))}
+                      className="w-36 border rounded px-2 py-1 text-xs"
+                    />
                     <input
                       type="date"
                       disabled={!isAdmin}

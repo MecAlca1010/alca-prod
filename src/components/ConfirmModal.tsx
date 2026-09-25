@@ -5,6 +5,8 @@ interface ConfirmModalProps {
   cancelLabel?: string
   onConfirm: () => void
   onCancel: () => void
+  extraLabel?: string
+  onExtra?: () => void
 }
 
 export default function ConfirmModal({
@@ -14,19 +16,29 @@ export default function ConfirmModal({
   cancelLabel = 'Non',
   onConfirm,
   onCancel,
+  extraLabel,
+  onExtra,
 }: ConfirmModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
         <h2 className="text-xl font-black mb-3">{title}</h2>
         <p className="text-gray-600 text-sm mb-6 leading-relaxed whitespace-pre-line">{message}</p>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={onCancel}
             className="flex-1 border border-gray-300 py-2.5 rounded-lg hover:bg-gray-50 transition"
           >
             {cancelLabel}
           </button>
+          {extraLabel && onExtra && (
+            <button
+              onClick={onExtra}
+              className="flex-1 border border-alca-yellow py-2.5 rounded-lg hover:bg-yellow-50 transition text-sm"
+            >
+              {extraLabel}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             className="flex-1 bg-alca-yellow text-alca-black font-black py-2.5 rounded-lg hover:brightness-110 transition"
