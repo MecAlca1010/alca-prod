@@ -521,9 +521,9 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 xl:items-stretch">
         {/* Calendar */}
-        <div className="xl:col-span-2">
+        <div className="xl:col-span-2 flex flex-col">
           {stages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-3 px-1">
               {stages.map((stage) => (
@@ -549,8 +549,8 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
 
         {/* Projects list with drag & drop */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-full min-h-[42rem] flex flex-col">
+          <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-black">Projets</h2>
               <button
@@ -570,15 +570,15 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
             value={projectQuery}
             onChange={(e) => setProjectQuery(e.target.value)}
             placeholder="Rechercher (n°, client, VIN, série…)"
-            className="w-full border rounded-lg px-3 py-1.5 text-sm mb-3"
+            className="w-full border rounded-lg px-3 py-1.5 text-sm mb-3 shrink-0"
           />
 
           {projects.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">
+            <div className="text-center py-10 text-gray-400 text-sm flex-1">
               Aucun projet pour le moment
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
               {projects.filter((project) => {
                 const q = projectQuery.trim().toLowerCase()
                 if (!q) return true
@@ -669,7 +669,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
           )}
           <Link
             to="/livres"
-            className="mt-4 block text-center text-sm border border-gray-300 py-2 rounded-lg hover:bg-gray-50"
+            className="mt-4 shrink-0 block text-center text-sm border border-gray-300 py-2 rounded-lg hover:bg-gray-50"
           >
             Projets livrés
           </Link>

@@ -365,8 +365,8 @@ export default function ProductionCalendar({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-full min-h-[42rem] flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
         <h2 className="text-xl font-black">Calendrier de production</h2>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setWeekOffset((o) => o - 1)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">←</button>
@@ -426,10 +426,10 @@ export default function ProductionCalendar({
       )}
 
       <p className="text-xs text-gray-400 mb-3">
-        Roulette ou barre de défilement : jusqu’à la dernière étape ({weeksToShow} semaines).
+        Environ 4 semaines à l’écran — roulette pour aller jusqu’à la dernière étape.
       </p>
       <div
-        className="space-y-6 max-h-[70vh] overflow-y-auto pr-1"
+        className="space-y-6 flex-1 min-h-[28rem] overflow-y-auto pr-1"
         ref={(el) => {
           if (el) {
             const w = el.getBoundingClientRect().width
