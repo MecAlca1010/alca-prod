@@ -77,19 +77,19 @@ export default function ProductionCalendar({
 
   const baseWeekStart = useMemo(() => startOfWeek(new Date()), [])
 
-  const weeksToShow = 4
-
-  const maxWeekOffset = useMemo(() => {
-    if (localStages.length === 0) return 12
+  const weeksToShow = useMemo(() => {
+    if (localStages.length === 0) return 8
     let maxEnd = localStages[0].endDate
     for (const s of localStages) {
       if (s.endDate > maxEnd) maxEnd = s.endDate
     }
     const lastWeekStart = startOfWeek(parseDate(maxEnd))
+    const firstVisible = new Date(baseWeekStart)
+    firstVisible.setDate(baseWeekStart.getDate() + weekOffset * 7)
     const msPerWeek = 7 * 24 * 60 * 60 * 1000
-    const diff = Math.ceil((lastWeekStart.getTime() - baseWeekStart.getTime()) / msPerWeek)
-    return Math.max(0, diff)
-  }, [localStages, baseWeekStart])
+    const diffMs = lastWeekStart.getTime() - firstVisible.getTime()
+    return Math.min(Math.max(8, Math.ceil(diffMs / msPerWeek) + 1), 60)
+  }, [localStages, baseWeekStart, weekOffset])
 
   const q = highlightQuery.trim().toLowerCase()
   const isHighlighted = (s: ScheduledStage) => {
@@ -371,11 +371,7 @@ export default function ProductionCalendar({
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setWeekOffset((o) => o - 1)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">←</button>
           <button onClick={() => setWeekOffset(0)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">Aujourd'hui</button>
-          <button
-            onClick={() => setWeekOffset((o) => Math.min(maxWeekOffset, o + 1))}
-            disabled={weekOffset >= maxWeekOffset}
-            className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40"
-          >→</button>
+          <button onClick={() => setWeekOffset((o) => o + 1)} className="px-3 py-1 border rounded text-sm hover:bg-gray-50">→</button>
           {isAdmin && onReoptimize && (
             <button
               onClick={onReoptimize}
@@ -429,8 +425,11 @@ export default function ProductionCalendar({
         </div>
       )}
 
+      <p className="text-xs text-gray-400 mb-3">
+        Roulette ou barre de défilement : jusqu’à la dernière étape ({weeksToShow} semaines).
+      </p>
       <div
-        className="space-y-6"
+        className="space-y-6 max-h-[70vh] overflow-y-auto pr-1"
         ref={(el) => {
           if (el) {
             const w = el.getBoundingClientRect().width
