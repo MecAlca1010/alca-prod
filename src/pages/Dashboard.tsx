@@ -549,7 +549,7 @@ export default function Dashboard({ isAdmin }: DashboardProps) {
         </div>
 
         {/* Projects list with drag & drop */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col max-h-[82vh]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col h-[82vh]">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-black">Projets</h2>
