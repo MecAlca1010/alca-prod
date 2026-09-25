@@ -31,7 +31,7 @@ export async function handler(event) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'ALCA Prod <production@mecanoalca.ca>',
+          from: process.env.RESEND_FROM,
           to: ['jonathan@mecanoalca.ca'],
           subject: `ALCA Prod — Prêt pour PDI : ${projectNumber}`,
           text: `${clientName} — ${projectNumber} terminé, prêt pour PDI.`,
@@ -53,8 +53,12 @@ export async function handler(event) {
     : `Projet ${projectNumber} — ${clientName}\nÉtape ${stageName} réouverte.`
 
   const apiKey = (process.env.RESEND_API_KEY || '').trim()
+  const fromAddr = process.env.RESEND_FROM
   if (!apiKey) {
     return json(200, { emailed: false, reason: 'RESEND_API_KEY manquante' })
+  }
+  if (!fromAddr) {
+    return json(200, { emailed: false, reason: 'RESEND_FROM manquante' })
   }
 
   try {
@@ -65,7 +69,7 @@ export async function handler(event) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM || 'ALCA Prod <production@mecanoalca.ca>',
+        from: process.env.RESEND_FROM,
         to: ADMIN_EMAILS,
         subject,
         text,
